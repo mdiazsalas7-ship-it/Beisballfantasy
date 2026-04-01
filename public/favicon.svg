@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Background rounded square -->
+  <rect width="512" height="512" rx="96" fill="#060b14"/>
+  
+  <!-- Shield -->
+  <path d="M256 72 L400 140 L400 300 Q400 380 256 440 Q112 380 112 300 L112 140 Z" fill="#111a2e" stroke="#22d3a8" stroke-width="6"/>
+  <path d="M256 88 L388 150 L388 296 Q388 370 256 426 Q124 370 124 296 L124 150 Z" fill="#0c1220" stroke="#1b2a45" stroke-width="3"/>
+  
+  <!-- Bat left -->
+  <g transform="rotate(-40, 256, 270)">
+    <rect x="120" y="258" width="200" height="18" rx="9" fill="#f1f5f9" stroke="#0c1220" stroke-width="3"/>
+    <rect x="100" y="254" width="36" height="26" rx="6" fill="#94a3b8" stroke="#0c1220" stroke-width="2"/>
+    <rect x="304" y="261" width="40" height="12" rx="4" fill="#cbd5e1"/>
+    <line x1="310" y1="267" x2="340" y2="267" stroke="#94a3b8" stroke-width="1.5"/>
+  </g>
+  
+  <!-- Bat right -->
+  <g transform="rotate(40, 256, 270)">
+    <rect x="192" y="258" width="200" height="18" rx="9" fill="#f1f5f9" stroke="#0c1220" stroke-width="3"/>
+    <rect x="376" y="254" width="36" height="26" rx="6" fill="#94a3b8" stroke="#0c1220" stroke-width="2"/>
+    <rect x="168" y="261" width="40" height="12" rx="4" fill="#cbd5e1"/>
+    <line x1="172" y1="267" x2="202" y2="267" stroke="#94a3b8" stroke-width="1.5"/>
+  </g>
+  
+  <!-- Baseball -->
+  <circle cx="256" cy="268" r="56" fill="#f1f5f9" stroke="#0c1220" stroke-width="4"/>
+  <circle cx="256" cy="268" r="52" fill="#e8ecf0"/>
+  <circle cx="256" cy="268" r="48" fill="#f1f5f9"/>
+  
+  <!-- Stitching left -->
+  <path d="M224 232 Q218 248 220 268 Q222 288 228 304" fill="none" stroke="#22d3a8" stroke-width="4" stroke-linecap="round"/>
+  <line x1="220" y1="238" x2="228" y2="242" stroke="#22d3a8" stroke-width="2.5" stroke-linecap="round"/>
+  <line x1="218" y1="248" x2="226" y2="250" stroke="#22d3a8" stroke-width="2.5" stroke-linecap="round"/>
+  <line x1="218" y1="258" x2="224" y2="259" stroke="#22d3a8" stroke-width="2.5" stroke-linecap="round"/>
+  <line x1="218" y1="268" x2="224" y2="268" stroke="#22d3a8" stroke-width="2.5" stroke-linecap="round"/>
+  <line x1="218" y1="278" x2="224" y2="277" stroke="#22d3a8" stroke-width="2.5" stroke-linecap="round"/>
+  <line x1="220" y1="288" x2="226" y2="286" stroke="#22d3a8" stroke-width="2.5" stroke-linecap="round"/>
+  <line x1="224" y1="298" x2="230" y2="294" stroke="#22d3a8" stroke-width="2.5" stroke-linecap="round"/>
+  
+  <!-- Stitching right -->
+  <path d="M288 232 Q294 248 292 268 Q290 288 284 304" fill="none" stroke="#22d3a8" stroke-width="4" stroke-linecap="round"/>
+  <line x1="292" y1="238" x2="284" y2="242" stroke="#22d3a8" stroke-width="2.5" stroke-linecap="round"/>
+  <line x1="294" y1="248" x2="286" y2="250" stroke="#22d3a8" stroke-width="2.5" stroke-linecap="round"/>
+  <line x1="294" y1="258" x2="288" y2="259" stroke="#22d3a8" stroke-width="2.5" stroke-linecap="round"/>
+  <line x1="294" y1="268" x2="288" y2="268" stroke="#22d3a8" stroke-width="2.5" stroke-linecap="round"/>
+  <line x1="294" y1="278" x2="288" y2="277" stroke="#22d3a8" stroke-width="2.5" stroke-linecap="round"/>
+  <line x1="292" y1="288" x2="286" y2="286" stroke="#22d3a8" stroke-width="2.5" stroke-linecap="round"/>
+  <line x1="288" y1="298" x2="282" y2="294" stroke="#22d3a8" stroke-width="2.5" stroke-linecap="round"/>
+</svg>

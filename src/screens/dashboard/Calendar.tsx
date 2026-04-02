@@ -9,8 +9,7 @@ export function CalendarPage({ data, nav }: any) {
   const finals = data.games.filter((g: any) => g.status === "final").sort((a: any, b: any) => (b.createdAt || 0) - (a.createdAt || 0));
   const live = data.games.filter((g: any) => g.status === "live");
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({ awayTeamId: "", homeTeamId: "", date: "", time: "", location: "", innings: 7 });
-  const findTeam = (id: string) => data.teams.find((t: any) => t.id === id);
+  const [form, setForm] = useState({ awayTeamId: "", homeTeamId: "", date: "", time: "", location: "", innings: 9 });  const findTeam = (id: string) => data.teams.find((t: any) => t.id === id);
 
   const submit = async () => {
     if (!form.awayTeamId || !form.homeTeamId || form.awayTeamId === form.homeTeamId || !form.date) return;
@@ -235,7 +234,7 @@ export function CalendarPage({ data, nav }: any) {
               <div><label style={S.label}>Hora</label><input style={S.input} type="time" value={form.time} onChange={(e: any) => setForm({ ...form, time: e.target.value })} /></div>
             </div>
             <div><label style={S.label}>Lugar</label><input style={S.input} placeholder="Estadio..." value={form.location} onChange={(e: any) => setForm({ ...form, location: e.target.value })} /></div>
-            <div><label style={S.label}>Entradas</label><div style={{ display: "flex", gap: 6 }}>{[5, 6, 7, 9].map(n => <button key={n} onClick={() => setForm({ ...form, innings: n })} style={S.tab(form.innings === n)}>{n}</button>)}</div></div>
+            <div><label style={S.label}>Entradas</label><div style={{ display: "flex", gap: 6 }}>{[5, 6, 7, 9, 12].map(n => <button key={n} onClick={() => setForm({ ...form, innings: n })} style={S.tab(form.innings === n)}>{n}</button>)}</div></div>
             <button onClick={submit} style={{ ...S.btn("primary"), width: "100%" }} disabled={!form.awayTeamId || !form.homeTeamId || !form.date}>Programar</button>
           </div>
         </Modal>

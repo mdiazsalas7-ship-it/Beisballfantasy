@@ -281,14 +281,17 @@ export function LiveGame({ data, id, nav }: any) {
       if (nb[2]) { runs++; nb[2] = false; } if (nb[1]) { nb[2] = true; nb[1] = false; } if (nb[0]) { nb[1] = true; nb[0] = false; }
       const play = { ...makePlay(type, { ci: runs, isPitch: false }), playerId: null, playerName: pitcher?.name||"Pitcher" };
       await up({ plays: [...plays, play], bases: nb, ...scoreRuns(runs) });
-    } else if (type === "DP") { await registerOut("DP"); }
-    else if (type === "SAC") {
-      const nb = [...bases]; let runs = 0;
-      if (nb[2]) { runs++; nb[2] = false; } if (nb[1]) { nb[2] = true; nb[1] = false; } if (nb[0]) { nb[1] = true; nb[0] = false; }
-      const play = makePlay("SAC", { ci: runs, isPitch: true });
-      const newPlays = [...plays, play]; const u: any = { plays: newPlays, bases: nb, count: resetCount(), [batIdxKey]: nextBatter(), ...scoreRuns(runs) };
-      const o = (game.outs||0)+1;
-      if (o >= 3) changeHalf(u); else u.outs = o;
+    } else if (type === "DP") {
+      // DP: clear lead runner + batter out. If runner on 1st: clear 1st. If 1st+2nd: clear both.
+      const nb = [...bases];
+      if (nb[0]) { nb[0] = false; } // runner on 1st is out
+      else if (nb[1]) { nb[1] = false; } // or runner on 2nd
+      else if (nb[2]) { nb[2] = false; } // or runner on 3rd
+      const play = makePlay("DP", { isPitch: true });
+      const newPlays = [...plays, play]; const u: any = { plays: newPlays, bases: nb, count: resetCount(), [batIdxKey]: nextBatter() };
+      const o = (game.outs||0) + 2;
+      if (o >= 3) { changeHalf(u); if (!isTop && game.inning+1 > (game.totalInnings||7)) { await finishGame(newPlays); return; } }
+      else u.outs = o;
       await up(u);
     }
     setShowComplex(false);
@@ -328,13 +331,17 @@ export function LiveGame({ data, id, nav }: any) {
   // ── FINISH ──
   const finishGame = async (gamePlays: any[]) => {
     await up({ status: "final" });
+
+    // Team W/L
     if (aw) { const u = game.awayScore>game.homeScore?{wins:(aw.wins||0)+1}:game.awayScore<game.homeScore?{losses:(aw.losses||0)+1}:{draws:(aw.draws||0)+1}; await F.set("teams",aw.id,u); }
     if (hm) { const u = game.homeScore>game.awayScore?{wins:(hm.wins||0)+1}:game.homeScore<game.awayScore?{losses:(hm.losses||0)+1}:{draws:(hm.draws||0)+1}; await F.set("teams",hm.id,u); }
+
+    // Batting
     const batAgg: Record<string,any> = {};
-    gamePlays.forEach((p:any) => { if (!p.playerId) return;
-      if (!batAgg[p.playerId]) batAgg[p.playerId] = {VB:0,H:0,"2B":0,"3B":0,HR:0,CI:0,CA:0,BB:0,K:0,BR:0};
-      const s = batAgg[p.playerId];
-      if (["1B","2B","3B","HR"].includes(p.result)){s.VB++;s.H++;if(p.result==="2B")s["2B"]++;if(p.result==="3B")s["3B"]++;if(p.result==="HR")s.HR++;}
+    gamePlays.forEach((p:any) => { if(!p.playerId)return;
+      if(!batAgg[p.playerId]) batAgg[p.playerId]={VB:0,H:0,"2B":0,"3B":0,HR:0,CI:0,CA:0,BB:0,K:0,BR:0};
+      const s=batAgg[p.playerId];
+      if(["1B","2B","3B","HR"].includes(p.result)){s.VB++;s.H++;if(p.result==="2B")s["2B"]++;if(p.result==="3B")s["3B"]++;if(p.result==="HR")s.HR++;}
       else if(["BB","HBP"].includes(p.result))s.BB++;
       else if(["OUT","FLY","GROUND","K","DP","SAC","E"].includes(p.result)){s.VB++;if(p.result==="K")s.K++;}
       s.CI+=(p.ci||0);s.CA+=(p.ca||0);if(p.result==="SB")s.BR++;
@@ -344,16 +351,60 @@ export function LiveGame({ data, id, nav }: any) {
       const b=pl.batting||{JJ:0,VB:0,H:0,"2B":0,"3B":0,HR:0,CI:0,CA:0,BB:0,K:0,BR:0};
       await F.set("players",pid,{batting:{JJ:(b.JJ||0)+1,VB:(b.VB||0)+gs.VB,H:(b.H||0)+gs.H,"2B":(b["2B"]||0)+gs["2B"],"3B":(b["3B"]||0)+gs["3B"],HR:(b.HR||0)+gs.HR,CI:(b.CI||0)+gs.CI,CA:(b.CA||0)+gs.CA,BB:(b.BB||0)+gs.BB,K:(b.K||0)+gs.K,BR:(b.BR||0)+gs.BR}});
     }
+
+    // Pitching — determine W/L/JC per pitcher
     const pitAgg: Record<string,any> = {};
-    gamePlays.forEach((p:any) => { if(!p.pitcherId||!p.result) return;
-      if(!pitAgg[p.pitcherId])pitAgg[p.pitcherId]={H:0,BB:0,K:0,CL:0,outs:0};const s=pitAgg[p.pitcherId];
-      if(["1B","2B","3B","HR","E"].includes(p.result))s.H++;if(["BB","HBP"].includes(p.result))s.BB++;
-      if(p.result==="K")s.K++;if(["OUT","FLY","GROUND","K","SAC"].includes(p.result))s.outs++;if(p.result==="DP")s.outs+=2;s.CL+=(p.ci||0);
+    gamePlays.forEach((p:any) => { if(!p.pitcherId||!p.result)return;
+      if(!pitAgg[p.pitcherId]) pitAgg[p.pitcherId]={H:0,BB:0,K:0,CL:0,outs:0,teamSide:""};
+      const s=pitAgg[p.pitcherId];
+      if(["1B","2B","3B","HR","E"].includes(p.result))s.H++;
+      if(["BB","HBP"].includes(p.result))s.BB++;
+      if(p.result==="K")s.K++;
+      if(["OUT","FLY","GROUND","K","SAC"].includes(p.result))s.outs++;
+      if(p.result==="DP")s.outs+=2;
+      s.CL+=(p.ci||0);
+      // Determine which team this pitcher belongs to
+      if(!s.teamSide){
+        const inHome = (game.homeLineup||[]).find((x:any)=>x.id===p.pitcherId);
+        s.teamSide = inHome ? "home" : "away";
+      }
     });
+
+    // Who won?
+    const winSide = game.awayScore > game.homeScore ? "away" : game.homeScore > game.awayScore ? "home" : null;
+    // Find the pitcher who pitched the most outs for each side
+    const pitchersBySide = (side: string) => Object.entries(pitAgg).filter(([_,v]:any)=>v.teamSide!==side).sort((a:any,b:any)=>b[1].outs-a[1].outs);
+    // The opposing team's pitchers gave up runs to the winning team
+    // Winning pitcher = pitcher on winning team who pitched most (simplified)
+    const winPitchers = winSide ? Object.entries(pitAgg).filter(([_,v]:any)=>v.teamSide===winSide).sort((a:any,b:any)=>b[1].outs-a[1].outs) : [];
+    const losePitchers = winSide ? Object.entries(pitAgg).filter(([_,v]:any)=>v.teamSide!==(winSide)).sort((a:any,b:any)=>b[1].outs-a[1].outs) : [];
+    const wpId = winPitchers[0]?.[0] || null;
+    const lpId = losePitchers[0]?.[0] || null;
+
+    // Total outs in the game
+    const totalGameOuts = (game.totalInnings||7) * 3;
+
     for(const[pid,gs]of Object.entries(pitAgg)as any){
       const pl=data.players.find((p:any)=>p.id===pid);if(!pl)continue;
-      const pt=pl.pitching||{JJ:0,IL:0,H:0,CL:0,BB:0,K:0,G:0,P:0,JC:0};const il=Math.floor(gs.outs/3)+(gs.outs%3)/10;
-      await F.set("players",pid,{pitching:{JJ:(pt.JJ||0)+1,IL:parseFloat(((pt.IL||0)+il).toFixed(1)),H:(pt.H||0)+gs.H,CL:(pt.CL||0)+gs.CL,BB:(pt.BB||0)+gs.BB,K:(pt.K||0)+gs.K,G:pt.G||0,P:pt.P||0,JC:pt.JC||0}});
+      const pt=pl.pitching||{JJ:0,IL:0,H:0,CL:0,BB:0,K:0,G:0,P:0,JC:0};
+      const il=Math.floor(gs.outs/3)+(gs.outs%3)/10;
+      const isWin = pid === wpId;
+      const isLoss = pid === lpId;
+      // Complete game: pitcher recorded ALL outs for his team's defensive side
+      const teamTotalOuts = Object.entries(pitAgg).filter(([_,v]:any)=>v.teamSide===gs.teamSide).reduce((sum:number,[_,v]:any)=>sum+v.outs,0);
+      const isJC = gs.outs === teamTotalOuts && gs.outs >= (game.totalInnings||7)*3/2; // pitched all outs for his side
+
+      await F.set("players",pid,{pitching:{
+        JJ:(pt.JJ||0)+1,
+        IL:parseFloat(((pt.IL||0)+il).toFixed(1)),
+        H:(pt.H||0)+gs.H,
+        CL:(pt.CL||0)+gs.CL,
+        BB:(pt.BB||0)+gs.BB,
+        K:(pt.K||0)+gs.K,
+        G:(pt.G||0)+(isWin?1:0),
+        P:(pt.P||0)+(isLoss?1:0),
+        JC:(pt.JC||0)+(isJC?1:0),
+      }});
     }
     nav("home");
   };
@@ -623,22 +674,28 @@ export function LiveGame({ data, id, nav }: any) {
                     <td style={{textAlign:"center",padding:4}}>{s.sb}</td>
                     <td style={{textAlign:"center",padding:4,fontWeight:900,color:K.accent}}>{avg}</td></tr>);})}</tbody>
               </table></div></div>))}
-          <h4 style={{fontWeight:800,fontSize:13,color:K.blue,marginBottom:6,marginTop:8}}>⚾ PITCHERS</h4>
-          <div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:11,minWidth:400}}>
-            <thead><tr style={{color:K.muted,borderBottom:`1px solid ${K.border}`}}>
-              {["PITCHER","EQ","IP","H","CL","BB","K","LANZ","ERA"].map(c=><th key={c} style={{textAlign:c==="PITCHER"?"left":"center",padding:4,fontSize:9}}>{c}</th>)}
-            </tr></thead>
-            <tbody>{[...new Set(plays.filter((p:any)=>p.pitcherId&&p.result).map((p:any)=>p.pitcherId))].map(pid=>{
-              const ps=getPitcherGameStats(pid as string);const pName=plays.find((p:any)=>p.pitcherId===pid)?.pitcherName||"?";
-              const pTeam=[...(game.homeLineup||[])].find((p:any)=>p.id===pid)?hm?.abbr:aw?.abbr;
-              const era=parseFloat(ps.ip)>0?((ps.cl*7)/parseFloat(ps.ip)).toFixed(2):"0.00";
-              return<tr key={pid as string} style={{borderBottom:`1px solid ${K.border}`}}>
-                <td style={{padding:4,fontWeight:700}}>{pName}</td><td style={{textAlign:"center",padding:4,color:K.muted}}>{pTeam}</td>
-                <td style={{textAlign:"center",padding:4,fontWeight:700,color:K.accent}}>{ps.ip}</td><td style={{textAlign:"center",padding:4}}>{ps.h}</td>
-                <td style={{textAlign:"center",padding:4,color:K.red}}>{ps.cl}</td><td style={{textAlign:"center",padding:4}}>{ps.bb}</td>
-                <td style={{textAlign:"center",padding:4,fontWeight:700}}>{ps.K}</td><td style={{textAlign:"center",padding:4}}>{ps.pitches}</td>
-                <td style={{textAlign:"center",padding:4,fontWeight:900,color:K.blue}}>{era}</td></tr>;})}</tbody>
-          </table></div>
+              {[{label:aw?.name,side:"away",team:aw},{label:hm?.name,side:"home",team:hm}].map(({label,side,team})=>{
+            const teamPitcherIds = [...new Set(plays.filter((p:any)=>p.pitcherId&&p.result).map((p:any)=>p.pitcherId))].filter(pid=>{
+              const inHome=(game.homeLineup||[]).find((x:any)=>x.id===pid);
+              return side==="home"?!!inHome:!inHome;
+            });
+            if(teamPitcherIds.length===0) return null;
+            return <div key={side} style={{marginBottom:12}}>
+              <h4 style={{fontWeight:800,fontSize:13,color:K.blue,marginBottom:6}}>⚾ PITCHERS — {label}</h4>
+              <div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:11,minWidth:400}}>
+                <thead><tr style={{color:K.muted,borderBottom:`1px solid ${K.border}`}}>
+                  {["PITCHER","IP","H","CL","BB","K","LANZ","ERA"].map(c=><th key={c} style={{textAlign:c==="PITCHER"?"left":"center",padding:4,fontSize:9}}>{c}</th>)}
+                </tr></thead>
+                <tbody>{teamPitcherIds.map(pid=>{
+                  const ps=getPitcherGameStats(pid as string);const pName=plays.find((p:any)=>p.pitcherId===pid)?.pitcherName||"?";
+                  const era=parseFloat(ps.ip)>0?((ps.cl*7)/parseFloat(ps.ip)).toFixed(2):"0.00";
+                  return<tr key={pid as string} style={{borderBottom:`1px solid ${K.border}`}}>
+                    <td style={{padding:4,fontWeight:700}}>{pName}</td>
+                    <td style={{textAlign:"center",padding:4,fontWeight:700,color:K.accent}}>{ps.ip}</td><td style={{textAlign:"center",padding:4}}>{ps.h}</td>
+                    <td style={{textAlign:"center",padding:4,color:K.red}}>{ps.cl}</td><td style={{textAlign:"center",padding:4}}>{ps.bb}</td>
+                    <td style={{textAlign:"center",padding:4,fontWeight:700}}>{ps.K}</td><td style={{textAlign:"center",padding:4}}>{ps.pitches}</td>
+                    <td style={{textAlign:"center",padding:4,fontWeight:900,color:K.blue}}>{era}</td></tr>;})}</tbody>
+              </table></div></div>;})}
           <button onClick={()=>setShowTraditional(false)} style={{...S.btn("ghost"),width:"100%",marginTop:12}}>Cerrar</button>
         </div></div>}
     </div>

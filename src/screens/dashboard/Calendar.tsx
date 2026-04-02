@@ -25,6 +25,7 @@ export function CalendarPage({ data, nav }: any) {
         {data.isAdmin && <button onClick={() => setShowForm(true)} style={S.btn("primary")}><span style={{ display: "flex", alignItems: "center", gap: 6 }}><IcoPlus size={14} />Programar</span></button>}
       </div>
 
+      {/* Live */}
       {live.length > 0 && <div style={{ marginBottom: 20 }}><h3 style={{ fontWeight: 700, fontSize: 13, color: K.live, marginBottom: 10 }}>● En Vivo</h3>
         {live.map((g: any) => { const aw = findTeam(g.awayTeamId), hm = findTeam(g.homeTeamId); return (
           <div key={g.id} onClick={() => nav("scorer", "watch", g.id)} style={{ ...S.card, padding: 14, marginBottom: 8, cursor: "pointer", borderLeft: `3px solid ${K.live}` }}>
@@ -34,6 +35,7 @@ export function CalendarPage({ data, nav }: any) {
               <div style={{ textAlign: "center" }}><TeamLogo team={hm} size={32} /><div style={{ fontSize: 10, fontWeight: 700, marginTop: 4 }}>{hm?.abbr}</div></div>
             </div></div>); })}</div>}
 
+      {/* Scheduled */}
       <div style={{ marginBottom: 24 }}><h3 style={{ fontWeight: 700, fontSize: 13, color: K.blue, marginBottom: 10 }}>📋 Programados ({scheduled.length})</h3>
         {scheduled.map((g: any) => { const aw = findTeam(g.awayTeamId), hm = findTeam(g.homeTeamId); return (
           <div key={g.id} style={{ ...S.card, padding: 14, marginBottom: 8, border: `1px solid ${K.blue}33` }}>
@@ -51,6 +53,7 @@ export function CalendarPage({ data, nav }: any) {
         {scheduled.length === 0 && <div style={{ ...S.card, padding: 20, textAlign: "center" }}><p style={{ color: K.muted, fontSize: 12 }}>No hay juegos programados</p></div>}
       </div>
 
+      {/* Results */}
       <h3 style={{ fontWeight: 700, fontSize: 13, color: K.dim, marginBottom: 10 }}>✅ Resultados ({finals.length})</h3>
       {finals.map((g: any) => { const aw = findTeam(g.awayTeamId), hm = findTeam(g.homeTeamId); const d = g.createdAt ? new Date(g.createdAt) : null; return (
         <div key={g.id} onClick={() => nav("calendar", "boxscore", g.id)} style={{ ...S.card, padding: 14, marginBottom: 8, cursor: "pointer" }}>
@@ -62,6 +65,7 @@ export function CalendarPage({ data, nav }: any) {
           </div><div style={{ textAlign: "center", marginTop: 6 }}><span style={{ fontSize: 10, color: K.accent }}>Ver Box Score →</span></div>
         </div>); })}
 
+      {/* Schedule Form */}
       {showForm && data.isAdmin && (
         <Modal title="Programar Juego" onClose={() => setShowForm(false)}>
           <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
@@ -84,7 +88,7 @@ export function CalendarPage({ data, nav }: any) {
   );
 }
 
-// ═══ BOX SCORE — both teams ═══
+// ═══ BOX SCORE ═══
 export function BoxScore({ data, id, nav }: any) {
   const [game, setGame] = useState<any>(null);
   useEffect(() => { const u = F.onDoc("games", id!, setGame); return () => u && u(); }, [id]);
@@ -94,50 +98,70 @@ export function BoxScore({ data, id, nav }: any) {
   const hm = data.teams.find((t: any) => t.id === game.homeTeamId);
   const plays = game.plays || [];
 
-  // Aggregate by team
-  const agg = (teamFilter: string) => {
+  // Aggregate batting by team
+  const aggBat = (teamFilter: string) => {
     const stats: Record<string, any> = {};
     plays.forEach((p: any) => {
       if (!p.playerId || p.team !== teamFilter) return;
-      if (!stats[p.playerId]) stats[p.playerId] = { name: p.playerName || "?", VB: 0, H: 0, HR: 0, CI: 0, CA: 0, BB: 0, K: 0, "2B": 0, "3B": 0 };
+      if (!stats[p.playerId]) stats[p.playerId] = { name: p.playerName || "?", VB: 0, H: 0, HR: 0, CI: 0, CA: 0, BB: 0, K: 0, "2B": 0, "3B": 0, BR: 0 };
       const s = stats[p.playerId];
-      if (["1B", "2B", "3B", "HR", "E"].includes(p.result)) { s.VB++; s.H++; if (p.result === "2B") s["2B"]++; if (p.result === "3B") s["3B"]++; if (p.result === "HR") s.HR++; }
+      if (["1B", "2B", "3B", "HR"].includes(p.result)) { s.VB++; s.H++; if (p.result === "2B") s["2B"]++; if (p.result === "3B") s["3B"]++; if (p.result === "HR") s.HR++; }
       else if (["BB", "HBP"].includes(p.result)) { s.BB++; }
-      else if (["OUT", "FLY", "GROUND", "K", "DP", "SAC"].includes(p.result)) { s.VB++; if (p.result === "K") s.K++; }
+      else if (["OUT", "FLY", "GROUND", "K", "DP", "SAC", "E"].includes(p.result)) { s.VB++; if (p.result === "K") s.K++; }
       s.CI += (p.ci || 0); s.CA += (p.ca || 0);
+      if (p.result === "SB") s.BR++;
     });
     return Object.values(stats);
   };
 
-  const awayStats = agg("away");
-  const homeStats = agg("home");
+  // Aggregate pitching by team side
+  const aggPit = (side: string) => {
+    const pitcherPlays = plays.filter((p: any) => p.pitcherId && p.result);
+    const pids = [...new Set(pitcherPlays.map((p: any) => p.pitcherId))].filter(pid => {
+      const inHome = (game.homeLineup || []).find((x: any) => x.id === pid);
+      return side === "home" ? !!inHome : !inHome;
+    });
+    return pids.map(pid => {
+      let h = 0, bb = 0, k = 0, cl = 0, outs = 0;
+      pitcherPlays.forEach((p: any) => {
+        if (p.pitcherId !== pid) return;
+        if (["1B", "2B", "3B", "HR", "E"].includes(p.result)) h++;
+        if (["BB", "HBP"].includes(p.result)) bb++;
+        if (p.result === "K") k++;
+        if (["OUT", "FLY", "GROUND", "K", "SAC"].includes(p.result)) outs++;
+        if (p.result === "DP") outs += 2;
+        cl += (p.ci || 0);
+      });
+      const ip = (Math.floor(outs / 3) + (outs % 3) / 10).toFixed(1);
+      const era = parseFloat(ip) > 0 ? ((cl * 7) / parseFloat(ip)).toFixed(2) : "0.00";
+      const pName = pitcherPlays.find((p: any) => p.pitcherId === pid)?.pitcherName || "?";
+      return { name: pName, ip, h, cl, bb, k, era };
+    });
+  };
 
-  const StatsTable = ({ title, team, stats, color }: any) => (
+  const awayStats = aggBat("away");
+  const homeStats = aggBat("home");
+  const awayPit = aggPit("away");
+  const homePit = aggPit("home");
+
+  const BatTable = ({ title, team, stats, color }: any) => (
     <div style={{ ...S.card, marginBottom: 14, overflow: "hidden" }}>
       <div style={{ background: color || K.accent, padding: "8px 14px", display: "flex", alignItems: "center", gap: 8 }}>
         <TeamLogo team={team} size={20} />
-        <span style={{ fontWeight: 900, fontSize: 12, color: "#fff" }}>{title}</span>
+        <span style={{ fontWeight: 900, fontSize: 12, color: "#fff" }}>BATEO — {title}</span>
       </div>
       <div style={{ overflowX: "auto" }}>
-        <table style={{ ...S.tbl, fontSize: 11, minWidth: 400 }}>
+        <table style={{ ...S.tbl, fontSize: 11, minWidth: 450 }}>
           <thead><tr>
-            <th style={{ ...S.th, fontSize: 9 }}>JUGADOR</th>
-            <th style={{ ...S.th, textAlign: "center", fontSize: 9 }}>VB</th>
-            <th style={{ ...S.th, textAlign: "center", fontSize: 9 }}>H</th>
-            <th style={{ ...S.th, textAlign: "center", fontSize: 9 }}>2B</th>
-            <th style={{ ...S.th, textAlign: "center", fontSize: 9 }}>3B</th>
-            <th style={{ ...S.th, textAlign: "center", fontSize: 9 }}>HR</th>
-            <th style={{ ...S.th, textAlign: "center", fontSize: 9 }}>CI</th>
-            <th style={{ ...S.th, textAlign: "center", fontSize: 9 }}>CA</th>
-            <th style={{ ...S.th, textAlign: "center", fontSize: 9 }}>BB</th>
-            <th style={{ ...S.th, textAlign: "center", fontSize: 9 }}>K</th>
-            <th style={{ ...S.th, textAlign: "center", fontSize: 9 }}>AVG</th>
+            {["JUGADOR", "VB", "H", "2B", "3B", "HR", "CI", "CA", "BB", "K", "BR", "AVG"].map(c =>
+              <th key={c} style={{ ...S.th, textAlign: c === "JUGADOR" ? "left" : "center", fontSize: 9 }}>{c}</th>)}
           </tr></thead>
           <tbody>
             {stats.length > 0 ? stats.map((p: any, i: number) => {
               const avg = p.VB > 0 ? (p.H / p.VB).toFixed(3) : ".000";
               return (
-                <tr key={i}><td style={{ ...S.td, fontWeight: 700 }}>{p.name}</td>
+                <tr key={i} style={{ borderBottom: `1px solid ${K.border}` }}>
+                  <td style={{ ...S.td, fontWeight: 700 }}>{p.name}</td>
                   <td style={{ ...S.td, textAlign: "center" }}>{p.VB}</td>
                   <td style={{ ...S.td, textAlign: "center", fontWeight: 700 }}>{p.H}</td>
                   <td style={{ ...S.td, textAlign: "center" }}>{p["2B"]}</td>
@@ -147,19 +171,52 @@ export function BoxScore({ data, id, nav }: any) {
                   <td style={{ ...S.td, textAlign: "center" }}>{p.CA}</td>
                   <td style={{ ...S.td, textAlign: "center" }}>{p.BB}</td>
                   <td style={{ ...S.td, textAlign: "center" }}>{p.K}</td>
+                  <td style={{ ...S.td, textAlign: "center" }}>{p.BR}</td>
                   <td style={{ ...S.td, textAlign: "center", fontWeight: 900, color: K.accent }}>{avg}</td>
-                </tr>
-              );
-            }) : <tr><td colSpan={11} style={{ ...S.td, textAlign: "center", color: K.muted }}>Sin datos</td></tr>}
+                </tr>);
+            }) : <tr><td colSpan={12} style={{ ...S.td, textAlign: "center", color: K.muted }}>Sin datos</td></tr>}
           </tbody>
         </table>
       </div>
     </div>
   );
 
+  const PitTable = ({ title, team, stats, color }: any) => {
+    if (stats.length === 0) return null;
+    return (
+      <div style={{ ...S.card, marginBottom: 14, overflow: "hidden" }}>
+        <div style={{ background: color || K.blue, padding: "8px 14px", display: "flex", alignItems: "center", gap: 8 }}>
+          <TeamLogo team={team} size={20} />
+          <span style={{ fontWeight: 900, fontSize: 12, color: "#fff" }}>PITCHEO — {title}</span>
+        </div>
+        <div style={{ overflowX: "auto" }}>
+          <table style={{ ...S.tbl, fontSize: 11, minWidth: 350 }}>
+            <thead><tr>
+              {["PITCHER", "IP", "H", "CL", "BB", "K", "ERA"].map(c =>
+                <th key={c} style={{ ...S.th, textAlign: c === "PITCHER" ? "left" : "center", fontSize: 9 }}>{c}</th>)}
+            </tr></thead>
+            <tbody>
+              {stats.map((p: any, i: number) => (
+                <tr key={i} style={{ borderBottom: `1px solid ${K.border}` }}>
+                  <td style={{ ...S.td, fontWeight: 700 }}>{p.name}</td>
+                  <td style={{ ...S.td, textAlign: "center", fontWeight: 700, color: K.accent }}>{p.ip}</td>
+                  <td style={{ ...S.td, textAlign: "center" }}>{p.h}</td>
+                  <td style={{ ...S.td, textAlign: "center", color: K.red }}>{p.cl}</td>
+                  <td style={{ ...S.td, textAlign: "center" }}>{p.bb}</td>
+                  <td style={{ ...S.td, textAlign: "center", fontWeight: 700 }}>{p.k}</td>
+                  <td style={{ ...S.td, textAlign: "center", fontWeight: 900, color: K.blue }}>{p.era}</td>
+                </tr>))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div style={S.sec}>
       <h2 style={S.secT}>Box Score</h2>
+
       {/* Score */}
       <div style={{ ...S.card, padding: 20, marginBottom: 16, textAlign: "center" }}>
         <div style={{ display: "flex", justifyContent: "center", gap: 24, alignItems: "center", marginBottom: 12 }}>
@@ -183,15 +240,19 @@ export function BoxScore({ data, id, nav }: any) {
             {[{ t: aw, inn: game.awayInnings, s: game.awayScore }, { t: hm, inn: game.homeInnings, s: game.homeScore }].map((x, i) => (
               <tr key={i}><td style={{ ...S.td, fontWeight: 700 }}><div style={{ display: "flex", alignItems: "center", gap: 6 }}><TeamLogo team={x.t} size={16} />{x.t?.abbr}</div></td>
                 {(x.inn || []).map((r: any, j: number) => <td key={j} style={{ ...S.td, textAlign: "center", fontWeight: 700, color: r !== null ? K.text : K.muted }}>{r !== null ? r : "—"}</td>)}
-                <td style={{ ...S.td, textAlign: "center", fontWeight: 900, fontSize: 16, color: K.accent }}>{x.s}</td></tr>
-            ))}
+                <td style={{ ...S.td, textAlign: "center", fontWeight: 900, fontSize: 16, color: K.accent }}>{x.s}</td></tr>))}
           </tbody>
         </table>
       </div>
 
-      {/* Team stats */}
-      <StatsTable title={aw?.name || "Visitante"} team={aw} stats={awayStats} color={aw?.color || K.accent} />
-      <StatsTable title={hm?.name || "Local"} team={hm} stats={homeStats} color={hm?.color || K.blue} />
+      {/* Batting — Away */}
+      <BatTable title={aw?.name || "Visitante"} team={aw} stats={awayStats} color={aw?.color || K.accent} />
+      {/* Batting — Home */}
+      <BatTable title={hm?.name || "Local"} team={hm} stats={homeStats} color={hm?.color || K.blue} />
+      {/* Pitching — Away */}
+      <PitTable title={aw?.name || "Visitante"} team={aw} stats={awayPit} color={aw?.color || K.accent} />
+      {/* Pitching — Home */}
+      <PitTable title={hm?.name || "Local"} team={hm} stats={homePit} color={hm?.color || K.blue} />
     </div>
   );
 }

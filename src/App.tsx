@@ -12,6 +12,7 @@ import StatsPage from "./screens/dashboard/Stats.tsx";
 import NewsPage from "./screens/dashboard/News.tsx";
 import { CalendarPage, BoxScore } from "./screens/dashboard/Calendar.tsx";
 import { ScorerPage, LiveGame, WatchGame } from "./screens/dashboard/Scorer.tsx";
+import MetroTicker from "./components/MetroTicker.tsx"; // Importamos el Ticker global
 
 // News icon
 const IcoNews = (p: any) => (
@@ -63,7 +64,6 @@ export default function App() {
   // Init + restore
   useEffect(() => {
     const unsubs: any[] = [];
-    // Global news listener (all leagues)
     unsubs.push(F.on("news", setNews));
     unsubs.push(
       F.on("leagues", (ls: any[]) => {
@@ -134,37 +134,42 @@ export default function App() {
       <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet" />
       <style>{globalCSS}</style>
 
-      {/* HEADER */}
-      <header style={S.hdr}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          {screen !== "leagues" && (
-            <button onClick={goBack} style={{ background: "none", border: "none", color: K.dim, cursor: "pointer", padding: 4 }}>
-              <IcoBack size={20} />
-            </button>
-          )}
-          {league ? <LeagueLogo league={league} size={28} /> : <IcoBall size={24} color={K.accent} />}
-          <div>
-            <h1 style={{ fontSize: league ? 14 : 17, fontWeight: 900, background: `linear-gradient(135deg,${K.accent},${K.blue})`, WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>
-              {league ? league.name : "Béisbol Menor"}
-            </h1>
-            {category && <div style={{ fontSize: 10, color: K.muted, fontWeight: 600 }}>{category.name}</div>}
-          </div>
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          {isAdmin ? (
-            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-              <span style={{ ...S.badge(K.accent), fontSize: 9 }}>ADMIN</span>
-              <button onClick={handleLogout} style={{ background: "none", border: "none", color: K.muted, cursor: "pointer", padding: 4 }} title="Cerrar sesión"><IcoLogout size={16} /></button>
+      {/* HEADER + TICKER ENCAPSULADOS EN STICKY */}
+      <div style={{ position: 'sticky', top: 0, zIndex: 1000, boxShadow: '0 4px 15px rgba(0,0,0,0.1)' }}>
+        <header style={S.hdr}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            {screen !== "leagues" && (
+              <button onClick={goBack} style={{ background: "none", border: "none", color: K.dim, cursor: "pointer", padding: 4 }}>
+                <IcoBack size={20} />
+              </button>
+            )}
+            {league ? <LeagueLogo league={league} size={28} /> : <IcoBall size={24} color={K.accent} />}
+            <div>
+              <h1 style={{ fontSize: league ? 14 : 17, fontWeight: 900, background: `linear-gradient(135deg,${K.accent},${K.blue})`, WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>
+                {league ? league.name : "Béisbol Menor"}
+              </h1>
+              {category && <div style={{ fontSize: 10, color: K.muted, fontWeight: 600 }}>{category.name}</div>}
             </div>
-          ) : (
-            <button onClick={() => setShowLogin(true)} style={{ background: "none", border: "none", color: K.muted, cursor: "pointer", padding: 4 }} title="Admin"><IcoLock size={16} /></button>
-          )}
-          {inDashboard && (
-            <button onClick={switchLeague} title="Cambiar liga" style={{ background: "none", border: "none", color: K.muted, cursor: "pointer", padding: 4 }}><IcoLogout size={16} /></button>
-          )}
-          <div style={{ width: 7, height: 7, borderRadius: 4, background: K.green, animation: "pulse 2s infinite" }} />
-        </div>
-      </header>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            {isAdmin ? (
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <span style={{ ...S.badge(K.accent), fontSize: 9 }}>ADMIN</span>
+                <button onClick={handleLogout} style={{ background: "none", border: "none", color: K.muted, cursor: "pointer", padding: 4 }} title="Cerrar sesión"><IcoLogout size={16} /></button>
+              </div>
+            ) : (
+              <button onClick={() => setShowLogin(true)} style={{ background: "none", border: "none", color: K.muted, cursor: "pointer", padding: 4 }} title="Admin"><IcoLock size={16} /></button>
+            )}
+            {inDashboard && (
+              <button onClick={switchLeague} title="Cambiar liga" style={{ background: "none", border: "none", color: K.muted, cursor: "pointer", padding: 4 }}><IcoLogout size={16} /></button>
+            )}
+            <div style={{ width: 7, height: 7, borderRadius: 4, background: K.green, animation: "pulse 2s infinite" }} />
+          </div>
+        </header>
+
+        {/* METRO TICKER APARECE SOLO SI ESTAMOS EN UNA CATEGORÍA Y NO ESTAMOS ANOTANDO */}
+        {inDashboard && screen !== "scorer" && <MetroTicker data={data} />}
+      </div>
 
       {/* SCREENS */}
       <main>

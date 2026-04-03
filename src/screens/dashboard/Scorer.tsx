@@ -64,7 +64,7 @@ function PreGameSetup({ game, data, up, nav }: any) {
   const [awLu, setAwLu] = useState<any[]>(game.awayLineup || []);
   const [hmLu, setHmLu] = useState<any[]>(game.homeLineup || []);
 
-  const POS_OPTIONS = ["P(1)","C(2)","1B(3)","2B(4)","3B(5)","SS(6)","LF(7)","CF(8)","RF(9)","BD"]; // Se quitó BN
+  const POS_OPTIONS = ["P(1)","C(2)","1B(3)","2B(4)","3B(5)","SS(6)","LF(7)","CF(8)","RF(9)","BD"];
 
   const roster = tab === "away" ? awRoster : hmRoster;
   const lu = tab === "away" ? awLu : hmLu;
@@ -272,13 +272,34 @@ export function LiveGame({ data, id, nav }: any) {
 
   const resetCount = () => ({balls:0,strikes:0});
   const nextBatter = () => batLineup.length===0 ? batIdx : (batIdx+1)%batLineup.length;
-  const scoreRuns = (runs:number) => { if(runs<=0) return {}; const k=isTop?"awayScore":"homeScore"; const ik=isTop?"awayInnings":"homeInnings"; const ni=[...(game[ik]||[])]; ni[game.inning-1]=(ni[game.inning-1]||0)+runs; return {[k]:(game[k]||0)+runs,[ik]:ni}; };
+  
+  // ── 🛠 CORRECCIÓN CRÍTICA DE FIREBASE (SPARSE ARRAYS) ──
+  const scoreRuns = (runs:number) => { 
+    if(runs<=0) return {}; 
+    const k=isTop?"awayScore":"homeScore"; 
+    const ik=isTop?"awayInnings":"homeInnings"; 
+    const ni=[...(game[ik]||[])]; 
+    // Rellenamos cualquier "hueco" anterior con ceros para que Firebase no rechace el array
+    for(let i=0; i<game.inning; i++) { if(ni[i] == null) ni[i] = 0; }
+    ni[game.inning-1] = ni[game.inning-1] + runs; 
+    return {[k]:(game[k]||0)+runs,[ik]:ni}; 
+  };
 
   const changeHalf = (u:any) => {
     u.outs=0; u.bases=[null,null,null]; u.count=resetCount();
-    if(isTop) { u.half="bottom"; const ai=[...(game.awayInnings||[])]; if(ai[game.inning-1]===null)ai[game.inning-1]=0; u.awayInnings=ai;
+    if(isTop) {
+      u.half="bottom";
+      // Preservamos las carreras que ya se pudieron haber metido en 'u' y rellenamos huecos
+      const ai=[...(u.awayInnings || game.awayInnings || [])]; 
+      for(let i=0; i<game.inning; i++) { if(ai[i] == null) ai[i]=0; }
+      u.awayInnings=ai;
       const asp=game.awayStartingPitcher; if(asp) u.currentPitcher={id:asp.id,name:asp.name,number:asp.number};
-    } else { const hi=[...(game.homeInnings||[])]; if(hi[game.inning-1]===null)hi[game.inning-1]=0; u.homeInnings=hi; u.inning=game.inning+1; u.half="top";
+    } else {
+      const hi=[...(u.homeInnings || game.homeInnings || [])]; 
+      for(let i=0; i<game.inning; i++) { if(hi[i] == null) hi[i]=0; }
+      u.homeInnings=hi; 
+      u.inning=game.inning+1; 
+      u.half="top";
       const hsp=game.homeStartingPitcher; if(hsp) u.currentPitcher={id:hsp.id,name:hsp.name,number:hsp.number};
     }
   };
@@ -454,7 +475,9 @@ export function LiveGame({ data, id, nav }: any) {
     const rm=plays[plays.length-1]; const np=plays.slice(0,-1); const u:any={plays:np};
     if(rm.result&&rm.playerId){ const runs=(rm.ci||0)+(rm.ca||0);
       if(runs>0){const k=rm.team==="away"?"awayScore":"homeScore";const ik=rm.team==="away"?"awayInnings":"homeInnings";
-        u[k]=Math.max(0,(game[k]||0)-runs);const ni=[...(game[ik]||[])];ni[rm.inning-1]=Math.max(0,(ni[rm.inning-1]||0)-runs);u[ik]=ni;}
+        u[k]=Math.max(0,(game[k]||0)-runs);const ni=[...(game[ik]||[])];
+        if (ni[rm.inning-1] != null) ni[rm.inning-1]=Math.max(0,ni[rm.inning-1]-runs);
+        u[ik]=ni;}
       const bk=rm.team==="away"?"awayBatterIdx":"homeBatterIdx";const ln=rm.team==="away"?(game.awayLineup||[]):(game.homeLineup||[]);
       u[bk]=(game[bk]||0)>0?(game[bk]||0)-1:ln.length-1;
     } await up(u);
@@ -536,9 +559,8 @@ export function LiveGame({ data, id, nav }: any) {
   const rp=[...plays].filter((p:any)=>p.result).reverse().slice(0,6);
   const awH=plays.filter((p:any)=>p.team==="away"&&["1B","2B","3B","HR"].includes(p.result)).length;
   const hmH=plays.filter((p:any)=>p.team==="home"&&["1B","2B","3B","HR"].includes(p.result)).length;
-  // Lógica corregida: El error lo comete el equipo que está a la defensiva
-  const awE=plays.filter((p:any)=>p.result==="E"&&p.team==="home").length; // Home batea, Away comete error
-  const hmE=plays.filter((p:any)=>p.result==="E"&&p.team==="away").length; // Away batea, Home comete error
+  const awE=plays.filter((p:any)=>p.result==="E"&&p.team==="home").length; 
+  const hmE=plays.filter((p:any)=>p.result==="E"&&p.team==="away").length; 
 
   const Btn=({label,icon,color,bg,onClick,size="md",disabled=false}:any)=>(
     <button onClick={onClick} disabled={disabled} style={{padding:size==="lg"?"8px 4px":"6px 4px",borderRadius:10,border:`2px solid ${color}44`,background:bg||`${color}15`,color:disabled?K.muted:color,fontWeight:900,fontSize:size==="lg"?12:10,cursor:disabled?"not-allowed":"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:1,width:"100%",minHeight:size==="lg"?46:36,opacity:disabled?.4:1}}>
@@ -637,7 +659,6 @@ export function LiveGame({ data, id, nav }: any) {
               <Btn label="2B" icon="✌️" color="#14b8a6" onClick={()=>prepareHit("2B")} size="lg" disabled={noPitcher}/>
               <Btn label="3B" icon="🔱" color="#6366f1" onClick={()=>prepareHit("3B")} size="lg" disabled={noPitcher}/>
               <Btn label="HR" icon="💥" color={K.red} bg={`${K.red}22`} onClick={()=>prepareHit("HR")} size="lg" disabled={noPitcher}/>
-              {/* ── BOTON DE ERROR RESTAURADO ── */}
               <Btn label="ERROR" icon="🫣" color="#f97316" onClick={()=>prepareHit("E")} size="lg" disabled={noPitcher}/>
             </div></div>
           <div><div style={{fontSize:9,fontWeight:900,color:K.muted,marginBottom:4,paddingLeft:4}}>OUTS DE BATAZO</div>
@@ -682,7 +703,6 @@ export function LiveGame({ data, id, nav }: any) {
               <div style={{position:"relative", width:240, height:240, margin:"0 auto 20px"}}>
                 <svg width={240} height={240} style={{position:"absolute",inset:0}}>
                   <polygon points="120,40 200,120 120,200 40,120" fill="none" stroke={K.border} strokeWidth="2"/>
-                  {/* Dibuja líneas entre la ruta seleccionada */}
                   {fieldRoute.length > 1 && fieldRoute.map((node, i) => {
                     if(i===0) return null;
                     const prev = POS_COORDS[fieldRoute[i-1]]; const curr = POS_COORDS[node];
@@ -738,7 +758,7 @@ export function LiveGame({ data, id, nav }: any) {
             <span style={{fontSize:28}}>{{"1B":"🏏","2B":"✌️","3B":"🔱","HR":"💥","E":"🫣"}[showConfirm.type as string]}</span>
             <div style={{fontWeight:900,fontSize:16,color:K.text,marginTop:4}}>{currentBatter?.name}</div></div>
           
-          {/* NUEVO: Selector de Jugador para el Error */}
+          {/* Selector de Jugador para el Error */}
           {showConfirm.type === "E" && (
             <div style={{marginTop:8, background:`${K.red}11`, padding:12, borderRadius:10, border:`1px solid ${K.red}44`}}>
               <label style={{...S.label, color:K.red}}>¿Quién cometió el error?</label>

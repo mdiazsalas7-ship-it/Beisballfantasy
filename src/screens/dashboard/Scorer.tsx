@@ -53,6 +53,127 @@ export function ScorerPage({ data, nav }: any) {
     </div>);
 }
 
+// ═══ SETUP DE ALINEACIONES PRE-JUEGO ═══
+function PreGameSetup({ game, data, up, nav }: any) {
+  const aw = data.teams.find((t:any) => t.id === game.awayTeamId);
+  const hm = data.teams.find((t:any) => t.id === game.homeTeamId);
+  const awRoster = data.players.filter((p:any) => p.teamId === game.awayTeamId);
+  const hmRoster = data.players.filter((p:any) => p.teamId === game.homeTeamId);
+
+  const [tab, setTab] = useState<"away"|"home">("away");
+  const [awLu, setAwLu] = useState<any[]>(game.awayLineup || []);
+  const [hmLu, setHmLu] = useState<any[]>(game.homeLineup || []);
+
+  const POS_OPTIONS = ["P(1)","C(2)","1B(3)","2B(4)","3B(5)","SS(6)","LF(7)","CF(8)","RF(9)","BD"]; // Se quitó BN
+
+  const roster = tab === "away" ? awRoster : hmRoster;
+  const lu = tab === "away" ? awLu : hmLu;
+  const setLu = tab === "away" ? setAwLu : setHmLu;
+
+  const togglePlayer = (p: any) => {
+    if (lu.find(x => x.id === p.id)) {
+      setLu(lu.filter(x => x.id !== p.id));
+    } else {
+      if (lu.length >= 9) return alert("La alineación inicial solo puede tener 9 jugadores. El resto entra por sustitución.");
+      const unassigned = POS_OPTIONS.find(pos => !lu.find(x=>x.fieldPos === pos)) || "P(1)";
+      setLu([...lu, { id: p.id, name: p.name, number: p.number, position: p.position, fieldPos: unassigned }]);
+    }
+  };
+
+  const move = (idx: number, dir: number) => {
+    if (idx + dir < 0 || idx + dir >= lu.length) return;
+    const n = [...lu]; [n[idx], n[idx+dir]] = [n[idx+dir], n[idx]]; setLu(n);
+  };
+
+  const changePos = (idx: number, pos: string) => { const n = [...lu]; n[idx].fieldPos = pos; setLu(n); };
+
+  const autoFill = () => {
+    const needed = roster.filter((p:any) => !lu.find(x => x.id === p.id)).slice(0, Math.max(0, 9 - lu.length));
+    const unassigned = POS_OPTIONS.filter(pos => !lu.find(x=>x.fieldPos === pos));
+    const n = [...lu, ...needed.map((p:any) => ({ id: p.id, name: p.name, number: p.number, position: p.position, fieldPos: unassigned.shift() || "P(1)" }))];
+    setLu(n);
+  };
+
+  const start = async () => {
+    if (awLu.length !== 9) return alert(`Alineación incompleta: ${aw?.name} debe tener exactamente 9 bateadores.`);
+    if (hmLu.length !== 9) return alert(`Alineación incompleta: ${hm?.name} debe tener exactamente 9 bateadores.`);
+    if (!awLu.find(p=>p.fieldPos==="P(1)")) return alert(`${aw?.name} necesita asignar a un Lanzador P(1).`);
+    if (!hmLu.find(p=>p.fieldPos==="P(1)")) return alert(`${hm?.name} necesita asignar a un Lanzador P(1).`);
+
+    await up({
+      status: "live",
+      awayLineup: awLu, homeLineup: hmLu,
+      awayStartingPitcher: awLu.find(p=>p.fieldPos==="P(1)"),
+      homeStartingPitcher: hmLu.find(p=>p.fieldPos==="P(1)"),
+      currentPitcher: hmLu.find(p=>p.fieldPos==="P(1)"),
+      awayScore:0, homeScore:0, awayInnings:[], homeInnings:[],
+      inning:1, half:"top", outs:0, bases:[null,null,null], count:{balls:0,strikes:0}, plays:[],
+      awayBatterIdx: 0, homeBatterIdx: 0
+    });
+  };
+
+  return (
+    <div style={{...S.sec, maxWidth: 800, margin: "0 auto", paddingBottom: 80}}>
+      <div style={{display:"flex", gap:8, marginBottom:16, alignItems:"center"}}>
+        <button onClick={()=>nav("home")} style={{...S.btn("ghost"), padding:"6px 12px"}}>← Volver</button>
+        <h2 style={{...S.secT, margin:0, flex:1, textAlign:"center"}}>Alineaciones</h2>
+      </div>
+      
+      <div style={{display:"flex", borderRadius:10, overflow:"hidden", border:`1px solid ${K.border}`, marginBottom:16}}>
+        <button onClick={()=>setTab("away")} style={{flex:1, padding:12, fontWeight:900, background:tab==="away"?K.accent:K.input, color:tab==="away"?"#fff":K.muted, border:"none", cursor:"pointer"}}>{aw?.abbr} (Visitante)</button>
+        <button onClick={()=>setTab("home")} style={{flex:1, padding:12, fontWeight:900, background:tab==="home"?K.blue:K.input, color:tab==="home"?"#fff":K.muted, border:"none", cursor:"pointer"}}>{hm?.abbr} (Home)</button>
+      </div>
+
+      <div style={{display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(300px, 1fr))", gap:16}}>
+        <div style={{...S.card, padding:12}}>
+          <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10}}>
+            <h3 style={{fontWeight:900, fontSize:13, color:K.text}}>Orden al Bate ({lu.length}/9)</h3>
+            <button onClick={autoFill} style={{fontSize:10, padding:"4px 8px", background:K.input, border:`1px solid ${K.border}`, color:K.accent, borderRadius:6, cursor:"pointer"}}>⚡ Llenado Rápido</button>
+          </div>
+          <div style={{maxHeight: "50vh", overflowY: "auto", paddingRight:4}}>
+            {lu.map((p, i) => (
+              <div key={p.id} style={{display:"flex", alignItems:"center", gap:6, padding:"6px 0", borderBottom:`1px solid ${K.border}44`}}>
+                <div style={{display:"flex", flexDirection:"column", gap:2}}>
+                  <button onClick={()=>move(i, -1)} disabled={i===0} style={{background:"none", border:"none", color:i===0?K.border:K.muted, cursor:i===0?"default":"pointer", padding:2, fontSize:12}}>▲</button>
+                  <button onClick={()=>move(i, 1)} disabled={i===lu.length-1} style={{background:"none", border:"none", color:i===lu.length-1?K.border:K.muted, cursor:i===lu.length-1?"default":"pointer", padding:2, fontSize:12}}>▼</button>
+                </div>
+                <div style={{width:20, fontWeight:900, fontSize:12, color:K.accent, textAlign:"center"}}>{i+1}</div>
+                <div style={{flex:1, minWidth:0}}>
+                  <div style={{fontWeight:800, fontSize:12, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap"}}>#{p.number} {p.name}</div>
+                </div>
+                <select value={p.fieldPos} onChange={(e)=>changePos(i, e.target.value)} style={{background:K.input, border:`1px solid ${K.border}`, color:K.text, borderRadius:6, padding:"4px 2px", fontSize:11, fontWeight:800, outline:"none", cursor:"pointer"}}>
+                  {POS_OPTIONS.map(po => <option key={po} value={po}>{po}</option>)}
+                </select>
+                <button onClick={()=>togglePlayer(p)} style={{background:"none", border:"none", color:K.red, fontSize:14, padding:4, cursor:"pointer"}}>✕</button>
+              </div>
+            ))}
+            {lu.length === 0 && <div style={{textAlign:"center", color:K.muted, fontSize:11, padding:20}}>Toca jugadores del roster para agregar a la alineación</div>}
+          </div>
+        </div>
+
+        <div style={{...S.card, padding:12}}>
+          <h3 style={{fontWeight:900, fontSize:13, color:K.muted, marginBottom:10}}>Roster Disponible (Banca)</h3>
+          <div style={{display:"flex", flexDirection:"column", gap:4, maxHeight: "50vh", overflowY: "auto", paddingRight:4}}>
+            {roster.filter((p:any) => !lu.find(x => x.id === p.id)).map((p:any) => (
+              <button key={p.id} onClick={()=>togglePlayer(p)} style={{display:"flex", alignItems:"center", gap:8, padding:8, background:K.input, border:`1px solid ${K.border}`, borderRadius:8, color:K.text, cursor:"pointer", textAlign:"left"}}>
+                <span style={{fontWeight:900, color:K.accent}}>+</span>
+                <span style={{fontWeight:800, fontSize:12}}>#{p.number} {p.name}</span>
+                <span style={{fontSize:10, color:K.muted}}>{p.position}</span>
+              </button>
+            ))}
+            {roster.length === 0 && <div style={{fontSize:11, color:K.muted}}>No hay jugadores disponibles en el roster</div>}
+          </div>
+        </div>
+      </div>
+
+      <div style={{position:"fixed", bottom:0, left:0, right:0, padding:16, background:K.bg, borderTop:`1px solid ${K.border}`, zIndex:100}}>
+        <button onClick={start} style={{...S.btn("primary"), width:"100%", padding:14, fontSize:14}}>🚀 INICIAR JUEGO (Play Ball)</button>
+      </div>
+    </div>
+  );
+}
+
+// ═══ MOTOR PRINCIPAL DEL ANOTADOR EN VIVO ═══
 export function LiveGame({ data, id, nav }: any) {
   const [game,setGame] = useState<any>(null);
   const [showComplex,setShowComplex] = useState(false);
@@ -64,7 +185,6 @@ export function LiveGame({ data, id, nav }: any) {
   const [showAssignRun, setShowAssignRun] = useState(false);
   const [addTeamRun, setAddTeamRun] = useState(false);
 
-  // ESTADOS DEL NUEVO TRAZADOR DEFENSIVO
   const [showBatazo, setShowBatazo] = useState(false);
   const [fieldRoute, setFieldRoute] = useState<number[]>([]);
   const [fcRunnerSelect, setFcRunnerSelect] = useState(false);
@@ -72,6 +192,10 @@ export function LiveGame({ data, id, nav }: any) {
   useEffect(() => { const u = F.onDoc("games", id!, setGame); return () => u && u(); }, [id]);
 
   if (!game) return <div style={{...S.sec,textAlign:"center",padding:40}}><IcoBall size={40} color={K.accent} style={{animation:"spin 1.5s linear infinite",margin:"0 auto"}}/></div>;
+
+  if (game.status === "scheduled" || !game.awayLineup || game.awayLineup.length === 0) {
+    return <PreGameSetup game={game} data={data} up={async (u:any)=>await F.set("games",id!,u)} nav={nav} />;
+  }
 
   const aw = data.teams.find((t:any) => t.id === game.awayTeamId);
   const hm = data.teams.find((t:any) => t.id === game.homeTeamId);
@@ -95,7 +219,21 @@ export function LiveGame({ data, id, nav }: any) {
   const rawBases = game.bases || [null, null, null];
   const bases = rawBases.map((b: any) => b === true ? {id: "ghost", name: "Corredor"} : (b === false ? null : b));
 
-  // Mapa de Defensa (quién está en cada posición) para inyectarlo en la jugada
+  const getAvailSubs = (side: "away" | "home") => {
+    const r = data.players.filter((p:any) => p.teamId === (side==="away"?game.awayTeamId:game.homeTeamId));
+    const lu = side === "away" ? (game.awayLineup||[]) : (game.homeLineup||[]);
+    return r.filter((p:any) => !lu.find((x:any) => x.id === p.id));
+  };
+
+  const doSub = async (side: "away" | "home", idx: number, newPlayer: any) => {
+    const key = side === "away" ? "awayLineup" : "homeLineup";
+    const lu = [...(game[key]||[])];
+    const oldPos = lu[idx].fieldPos;
+    lu[idx] = { id: newPlayer.id, name: newPlayer.name, number: newPlayer.number, position: newPlayer.position, fieldPos: oldPos };
+    await up({ [key]: lu });
+    setShowSub(null);
+  };
+
   const buildDefenseMap = () => {
     const map:Record<number,string> = {};
     pitchLineup.forEach((p:any) => { if(p.fieldPos){ const num = parseInt(p.fieldPos.match(/\((\d)\)/)?.[1]||"0"); if(num) map[num] = p.id; } });
@@ -132,7 +270,6 @@ export function LiveGame({ data, id, nav }: any) {
 
   const getDefName = (pos: string) => { const p = pitchLineup.find((x:any) => x.fieldPos === pos); if (!p) return ""; const n = p.name.split(" "); return n.length > 1 ? `${n[0].charAt(0)}. ${n[n.length-1]}` : n[0]; };
 
-  // ── CORE LOGIC ──
   const resetCount = () => ({balls:0,strikes:0});
   const nextBatter = () => batLineup.length===0 ? batIdx : (batIdx+1)%batLineup.length;
   const scoreRuns = (runs:number) => { if(runs<=0) return {}; const k=isTop?"awayScore":"homeScore"; const ik=isTop?"awayInnings":"homeInnings"; const ni=[...(game[ik]||[])]; ni[game.inning-1]=(ni[game.inning-1]||0)+runs; return {[k]:(game[k]||0)+runs,[ik]:ni}; };
@@ -146,8 +283,6 @@ export function LiveGame({ data, id, nav }: any) {
     }
   };
 
-  const isGameOver = (newPlays:any[]) => !isTop && game.inning+1>(game.totalInnings||9) && game.awayScore!==game.homeScore;
-
   const makePlay = (result:string, extra:any={}) => ({
     playerId:currentBatter?.id, playerName:currentBatter?.name||"?",
     teamId:isTop?game.awayTeamId:game.homeTeamId, team:isTop?"away":"home", result,
@@ -157,17 +292,55 @@ export function LiveGame({ data, id, nav }: any) {
     defenseMap: buildDefenseMap(), ...extra,
   });
 
+  const processPlayAndCheckGameOver = async (u: any, numOutsToAdd: number = 0) => {
+    let o = (game.outs || 0) + numOutsToAdd;
+    const totInn = game.totalInnings || 9;
+    const awScore = u.awayScore !== undefined ? u.awayScore : (game.awayScore || 0);
+    const hmScore = u.homeScore !== undefined ? u.homeScore : (game.homeScore || 0);
+    const inn = game.inning;
+
+    if (!isTop && inn >= totInn && hmScore > awScore) {
+      u.outs = Math.min(o, 3);
+      await up(u);
+      await finishGame(u.plays || plays);
+      return;
+    }
+
+    if (o >= 3) {
+      u.outs = 3; 
+      if (isTop && inn >= totInn && hmScore > awScore) {
+        await up(u);
+        await finishGame(u.plays || plays);
+        return;
+      }
+      if (!isTop && inn >= totInn && hmScore !== awScore) {
+        await up(u);
+        await finishGame(u.plays || plays);
+        return;
+      }
+      changeHalf(u);
+      await up(u);
+    } else {
+      u.outs = o;
+      await up(u);
+    }
+  };
+
   const prepareHit = (type:string) => {
     if(noPitcher){setShowPitcher(true);return;}
     const{newBases,runnersScored}=advanceBases(bases, type, batterObj);
-    setShowConfirm({type,suggestedRuns:runnersScored.length,runs:runnersScored.length,newBases,runnersScored,ca:type==="HR"?1:0});
+    setShowConfirm({type,suggestedRuns:runnersScored.length,runs:runnersScored.length,newBases,runnersScored,ca:type==="HR"?1:0, extra: type==="E" ? {isEarned:false} : {}});
   };
   
   const confirmHit = async () => {
-    if(!showConfirm) return; const{type,runs,newBases,runnersScored}=showConfirm;
+    if(!showConfirm) return; 
+    if (showConfirm.type === "E" && !showConfirm.extra?.errorPlayerId) return alert("Por favor, selecciona quién cometió el error.");
+    
+    const{type,runs,newBases,runnersScored}=showConfirm;
     const play=makePlay(type,{ci:runs,ca:type==="HR"?1:0, ...(showConfirm.extra||{})});
     const runPlays = (runnersScored || []).filter((r:any) => r.id !== currentBatter?.id).slice(0, runs).map((r:any) => ({...makePlay("RUN", {ca:1, isPitch:false}), playerId: r.id, playerName: r.name}));
-    await up({plays:[...plays, play, ...runPlays],bases:newBases,count:resetCount(),[batIdxKey]:nextBatter(),...scoreRuns(runs)});
+    const u = {plays:[...plays, play, ...runPlays],bases:newBases,count:resetCount(),[batIdxKey]:nextBatter(),...scoreRuns(runs)};
+    await processPlayAndCheckGameOver(u, 0);
     setShowConfirm(null);
   };
 
@@ -177,7 +350,8 @@ export function LiveGame({ data, id, nav }: any) {
     if(b>=4){ 
       const{newBases,runnersScored}=walkBases(bases, batterObj);
       const runPlays = runnersScored.map((r:any) => ({...makePlay("RUN", {ca:1, isPitch:false}), playerId: r.id, playerName: r.name}));
-      await up({plays:[...plays,makePlay(isIBB?"IBB":"BB",{ci:runnersScored.length}), ...runPlays],bases:newBases,count:resetCount(),[batIdxKey]:nextBatter(),...scoreRuns(runnersScored.length)});
+      const u = {plays:[...plays,makePlay(isIBB?"IBB":"BB",{ci:runnersScored.length}), ...runPlays],bases:newBases,count:resetCount(),[batIdxKey]:nextBatter(),...scoreRuns(runnersScored.length)};
+      await processPlayAndCheckGameOver(u, 0);
     } else await up({plays:[...plays,{pitcherId:pitcher?.id,pitcherName:pitcher?.name,isPitch:true,timestamp:Date.now(),inning:game.inning,half:game.half}],count:{...count,balls:b}});
   };
 
@@ -186,19 +360,27 @@ export function LiveGame({ data, id, nav }: any) {
     const s=(count.strikes||0)+1;
     const pp={pitcherId:pitcher?.id,pitcherName:pitcher?.name,isPitch:true,pitchType:type,timestamp:Date.now(),inning:game.inning,half:game.half};
     if(type==="foul"&&s>=3){await up({plays:[...plays,pp]});return;}
-    if(s>=3){ const play=makePlay("K"); const np=[...plays,play]; const u:any={plays:np,count:resetCount(),[batIdxKey]:nextBatter()};
-      const o=(game.outs||0)+1; if(o>=3){changeHalf(u);if(isGameOver(np)){await finishGame(np);return;}} else u.outs=o; await up(u);
+    if(s>=3){ 
+      const play=makePlay("K"); const np=[...plays,play]; 
+      const u:any={plays:np,count:resetCount(),[batIdxKey]:nextBatter()};
+      await processPlayAndCheckGameOver(u, 1);
     } else await up({plays:[...plays,pp],count:{...count,strikes:s}});
   };
 
-  // ── TRAZADOR DE JUGADAS DEFENSIVAS ──
+  const registerOut = async (type: string) => {
+    if(noPitcher){setShowPitcher(true);return;}
+    const play=makePlay(type); const np=[...plays,play]; 
+    const u:any={plays:np,count:resetCount(),[batIdxKey]:nextBatter()};
+    await processPlayAndCheckGameOver(u, 1);
+  };
+
   const toggleRouteNode = (num:number) => {
     if(fieldRoute.includes(num)) setFieldRoute(fieldRoute.filter(x=>x!==num));
     else setFieldRoute([...fieldRoute, num]);
   };
 
   const executeFielding = async (type: "OUT" | "FLY" | "DP" | "FC" | "ERROR") => {
-    if(type === "FC") { setFcRunnerSelect(true); return; } // Abre selector de corredor
+    if(type === "FC") { setFcRunnerSelect(true); return; }
     if(type === "ERROR") { 
       const errPos = fieldRoute[fieldRoute.length-1] || 6;
       const defPlayer = pitchLineup.find((p:any) => p.fieldPos.includes(`(${errPos})`));
@@ -212,16 +394,16 @@ export function LiveGame({ data, id, nav }: any) {
     
     const play = makePlay(type==="OUT"?"GROUND":type, {route: fieldRoute}); 
     const np=[...plays,play]; const u:any={plays:np,count:resetCount(),[batIdxKey]:nextBatter(),bases:nb};
-    const o=(game.outs||0)+numOuts; if(o>=3){changeHalf(u);if(isGameOver(np)){await finishGame(np);return;}} else u.outs=o; 
-    await up(u); setShowBatazo(false); setFieldRoute([]);
+    await processPlayAndCheckGameOver(u, numOuts);
+    setShowBatazo(false); setFieldRoute([]);
   };
 
   const executeFC = async (baseIdxOut: number) => {
-    const nb = [...bases]; nb[baseIdxOut] = null; nb[0] = batterObj; // Saca corredor, bateador a 1ra
+    const nb = [...bases]; nb[baseIdxOut] = null; nb[0] = batterObj; 
     const play = makePlay("FC", {route: fieldRoute});
     const np=[...plays,play]; const u:any={plays:np,count:resetCount(),[batIdxKey]:nextBatter(),bases:nb};
-    const o=(game.outs||0)+1; if(o>=3){changeHalf(u);if(isGameOver(np)){await finishGame(np);return;}} else u.outs=o; 
-    await up(u); setShowBatazo(false); setFieldRoute([]); setFcRunnerSelect(false);
+    await processPlayAndCheckGameOver(u, 1);
+    setShowBatazo(false); setFieldRoute([]); setFcRunnerSelect(false);
   };
 
   const executeRunnerAction = async (type:"SB"|"CS"|"PK", baseIdx:number, runner:any) => {
@@ -230,13 +412,13 @@ export function LiveGame({ data, id, nav }: any) {
       let runs=0; let scored = []; 
       if(baseIdx===2){ runs=1; scored.push(runner); } else { nb[baseIdx+1]=runner; }
       const runPlays = scored.map((r:any) => ({...makePlay("RUN", {ca:1, isPitch:false}), playerId: r.id, playerName: r.name}));
-      await up({plays:[...plays,{...makePlay("SB",{ci:0,isPitch:false}),playerId:runner.id,playerName:runner.name}, ...runPlays],bases:nb,...(runs>0?scoreRuns(runs):{})});
+      const u = {plays:[...plays,{...makePlay("SB",{ci:0,isPitch:false}),playerId:runner.id,playerName:runner.name}, ...runPlays],bases:nb,...(runs>0?scoreRuns(runs):{})};
+      await processPlayAndCheckGameOver(u, 0);
     } else { 
-      // Pickoff da A al pitcher (1) y PO a la base. CS da A al catcher (2).
       const route = type==="PK" ? [1, baseIdx===0?3:baseIdx===1?4:5] : [2, baseIdx===0?3:baseIdx===1?4:5];
       const play={...makePlay(type,{isPitch:false, route}),playerId:runner.id,playerName:runner.name};
-      const np=[...plays,play]; const u:any={plays:np,bases:nb}; const o=(game.outs||0)+1;
-      if(o>=3){changeHalf(u);if(isGameOver(np)){await finishGame(np);return;}} else u.outs=o; await up(u);
+      const np=[...plays,play]; const u:any={plays:np,bases:nb}; 
+      await processPlayAndCheckGameOver(u, 1);
     }
     setShowRunnerAction(null); setShowComplex(false);
   };
@@ -246,11 +428,13 @@ export function LiveGame({ data, id, nav }: any) {
     if(type==="IBB"){ addBall(true); }
     else if(type==="HBP"){ const{newBases,runnersScored}=walkBases(bases, batterObj);
       const runPlays = runnersScored.map((r:any) => ({...makePlay("RUN", {ca:1, isPitch:false}), playerId: r.id, playerName: r.name}));
-      await up({plays:[...plays,makePlay("HBP",{ci:runnersScored.length}), ...runPlays],bases:newBases,count:resetCount(),[batIdxKey]:nextBatter(),...scoreRuns(runnersScored.length)});
+      const u = {plays:[...plays,makePlay("HBP",{ci:runnersScored.length}), ...runPlays],bases:newBases,count:resetCount(),[batIdxKey]:nextBatter(),...scoreRuns(runnersScored.length)};
+      await processPlayAndCheckGameOver(u, 0);
     } else if(type==="SAC"){ const{newBases,runnersScored}=advanceAllRunners(bases);
       const runPlays = runnersScored.map((r:any) => ({...makePlay("RUN", {ca:1, isPitch:false}), playerId: r.id, playerName: r.name}));
-      const np=[...plays,makePlay("SAC",{ci:runnersScored.length,isSacrifice:true}), ...runPlays]; const u:any={plays:np,bases:newBases,count:resetCount(),[batIdxKey]:nextBatter(),...scoreRuns(runnersScored.length)};
-      const o=(game.outs||0)+1; if(o>=3)changeHalf(u); else u.outs=o; await up(u);
+      const np=[...plays,makePlay("SAC",{ci:runnersScored.length,isSacrifice:true}), ...runPlays]; 
+      const u:any={plays:np,bases:newBases,count:resetCount(),[batIdxKey]:nextBatter(),...scoreRuns(runnersScored.length)};
+      await processPlayAndCheckGameOver(u, 1);
     } else if(type==="SB"||type==="CS"||type==="PK"){ 
       const rOn=bases.map((b:any,i:number)=>({idx:i,runner:b})).filter((r:any)=>r.runner !== null);
       if(rOn.length===0){setShowComplex(false);return;}
@@ -259,7 +443,8 @@ export function LiveGame({ data, id, nav }: any) {
     } else if(type==="WP" || type==="PB" || type==="BALK"){ const{newBases,runnersScored}=advanceAllRunners(bases);
       const runPlays = runnersScored.map((r:any) => ({...makePlay("RUN", {ca:1, isPitch:false}), playerId: r.id, playerName: r.name}));
       const isEarned = type !== "PB";
-      await up({plays:[...plays,{...makePlay(type,{ci:0,isEarned,isPitch:false}),playerId:null,playerName:type==="PB"?"Receptor":pitcher?.name||"Pitcher"}, ...runPlays],bases:newBases,...scoreRuns(runnersScored.length)});
+      const u = {plays:[...plays,{...makePlay(type,{ci:0,isEarned,isPitch:false}),playerId:null,playerName:type==="PB"?"Receptor":pitcher?.name||"Pitcher"}, ...runPlays],bases:newBases,...scoreRuns(runnersScored.length)};
+      await processPlayAndCheckGameOver(u, 0);
     }
     setShowComplex(false);
   };
@@ -275,18 +460,16 @@ export function LiveGame({ data, id, nav }: any) {
     } await up(u);
   };
 
-  // ── CIERRE DE JUEGO MÁGICO (Inyecta stats defensivos y ofensivos) ──
   const finishGame = async (gp:any[]) => {
     await up({status:"final"});
     if(aw){const u=game.awayScore>game.homeScore?{wins:(aw.wins||0)+1}:game.awayScore<game.homeScore?{losses:(aw.losses||0)+1}:{draws:(aw.draws||0)+1};await F.set("teams",aw.id,u);}
     if(hm){const u=game.homeScore>game.awayScore?{wins:(hm.wins||0)+1}:game.homeScore<game.awayScore?{losses:(hm.losses||0)+1}:{draws:(hm.draws||0)+1};await F.set("teams",hm.id,u);}
     
-    const ba:Record<string,any>={}; // Batting
-    const pa:Record<string,any>={}; // Pitching
-    const fa:Record<string,any>={}; // Fielding (NUEVO)
+    const ba:Record<string,any>={}; 
+    const pa:Record<string,any>={}; 
+    const fa:Record<string,any>={}; 
 
     gp.forEach((p:any)=>{
-      // 1. FIELDING (Defensa)
       if(p.defenseMap && p.route && p.route.length > 0) {
         if (p.result === "E") {
           const errId = p.errorPlayerId || p.defenseMap[p.route[p.route.length - 1]];
@@ -302,11 +485,10 @@ export function LiveGame({ data, id, nav }: any) {
              p.route.forEach((pos:number) => { const dpId = p.defenseMap[pos]; if (dpId) { if(!fa[dpId]) fa[dpId]={PO:0,A:0,E:0,DP:0}; fa[dpId].DP++; }});
           }
         }
-      } else if (p.result === "E" && p.errorPlayerId) { // Fallback de error
+      } else if (p.result === "E" && p.errorPlayerId) { 
         if(!fa[p.errorPlayerId]) fa[p.errorPlayerId]={PO:0,A:0,E:0,DP:0}; fa[p.errorPlayerId].E++;
       }
 
-      // 2. BATTING
       if(p.playerId){
         if(!ba[p.playerId])ba[p.playerId]={VB:0,H:0,"2B":0,"3B":0,HR:0,CI:0,CA:0,BB:0,K:0,BR:0,E:0}; const s=ba[p.playerId];
         if(["1B","2B","3B","HR"].includes(p.result)){s.VB++;s.H++;if(p.result==="2B")s["2B"]++;if(p.result==="3B")s["3B"]++;if(p.result==="HR")s.HR++;}
@@ -315,7 +497,6 @@ export function LiveGame({ data, id, nav }: any) {
         s.CI+=(p.ci||0);s.CA+=(p.ca||0);if(p.result==="SB")s.BR++;
       }
       
-      // 3. PITCHING
       if(p.pitcherId && p.result){
         if(!pa[p.pitcherId])pa[p.pitcherId]={H:0,BB:0,K:0,CL:0,outs:0,ts:""}; const s=pa[p.pitcherId];
         if(["1B","2B","3B","HR","E"].includes(p.result))s.H++; if(["BB","IBB","HBP"].includes(p.result))s.BB++; if(p.result==="K")s.K++;
@@ -324,7 +505,6 @@ export function LiveGame({ data, id, nav }: any) {
       }
     });
 
-    // Guardar Batting & Fielding
     const allPids = new Set([...Object.keys(ba), ...Object.keys(fa)]);
     for(const pid of allPids) {
       const pl = data.players.find((p:any)=>p.id===pid); if(!pl) continue;
@@ -339,7 +519,6 @@ export function LiveGame({ data, id, nav }: any) {
       await F.set("players",pid, payload);
     }
 
-    // Guardar Pitching (Ganador, Perdedor)
     const ws=game.awayScore>game.homeScore?"away":game.homeScore>game.awayScore?"home":null;
     const wps=ws?Object.entries(pa).filter(([_,v]:any)=>v.ts===ws).sort((a:any,b:any)=>b[1].outs-a[1].outs):[];
     const lps=ws?Object.entries(pa).filter(([_,v]:any)=>v.ts!==ws).sort((a:any,b:any)=>b[1].outs-a[1].outs):[];
@@ -357,13 +536,16 @@ export function LiveGame({ data, id, nav }: any) {
   const rp=[...plays].filter((p:any)=>p.result).reverse().slice(0,6);
   const awH=plays.filter((p:any)=>p.team==="away"&&["1B","2B","3B","HR"].includes(p.result)).length;
   const hmH=plays.filter((p:any)=>p.team==="home"&&["1B","2B","3B","HR"].includes(p.result)).length;
-  const awE=plays.filter((p:any)=>p.result==="E"&&p.team==="away").length;
-  const hmE=plays.filter((p:any)=>p.result==="E"&&p.team==="home").length;
+  // Lógica corregida: El error lo comete el equipo que está a la defensiva
+  const awE=plays.filter((p:any)=>p.result==="E"&&p.team==="home").length; // Home batea, Away comete error
+  const hmE=plays.filter((p:any)=>p.result==="E"&&p.team==="away").length; // Away batea, Home comete error
 
   const Btn=({label,icon,color,bg,onClick,size="md",disabled=false}:any)=>(
     <button onClick={onClick} disabled={disabled} style={{padding:size==="lg"?"8px 4px":"6px 4px",borderRadius:10,border:`2px solid ${color}44`,background:bg||`${color}15`,color:disabled?K.muted:color,fontWeight:900,fontSize:size==="lg"?12:10,cursor:disabled?"not-allowed":"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:1,width:"100%",minHeight:size==="lg"?46:36,opacity:disabled?.4:1}}>
       <span style={{fontSize:size==="lg"?16:14}}>{icon}</span><span>{label}</span></button>);
       
+  const totalCols = Math.max(game.totalInnings||9, Math.max((game.awayInnings||[]).length, (game.homeInnings||[]).length));
+
   return (
     <div style={{background:K.bg,color:K.text,fontFamily:"'Outfit',system-ui,sans-serif",minHeight:"100vh",display:"flex",flexDirection:"column"}}>
       <style>{`.sg{display:grid;grid-template-columns:200px 1fr 240px;grid-template-rows:auto 1fr auto;height:100vh;gap:0}@media(max-width:800px){.sg{grid-template-columns:1fr;grid-template-rows:auto auto auto auto auto}}.sx::-webkit-scrollbar{display:none}.sx{-ms-overflow-style:none;scrollbar-width:none}
@@ -374,12 +556,15 @@ export function LiveGame({ data, id, nav }: any) {
         <div style={{gridColumn:"1/-1",background:"#0a0e1a",borderBottom:`2px solid ${K.border}`,padding:"8px 12px",display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:8}}>
           <table style={{borderCollapse:"collapse",fontSize:11}}><thead><tr style={{color:K.muted}}>
             <th style={{padding:"2px 8px",textAlign:"left",fontSize:9}}>EQ</th>
-            {Array.from({length:game.totalInnings||9}).map((_:any,i:number)=><th key={i} style={{padding:"2px 4px",textAlign:"center",fontSize:9,color:game.inning===i+1?K.accent:K.muted}}>{i+1}</th>)}
+            {Array.from({length: totalCols}).map((_:any,i:number)=><th key={i} style={{padding:"2px 4px",textAlign:"center",fontSize:9,color:game.inning===i+1?K.accent:K.muted}}>{i+1}</th>)}
             <th style={{padding:"2px 6px",textAlign:"center",fontSize:9,color:K.accent}}>R</th><th style={{padding:"2px 6px",textAlign:"center",fontSize:9}}>H</th><th style={{padding:"2px 6px",textAlign:"center",fontSize:9}}>E</th>
-          </tr></thead><tbody>{[{t:aw,inn:game.awayInnings,s:game.awayScore,h:awH,e:hmE},{t:hm,inn:game.homeInnings,s:game.homeScore,h:hmH,e:awE}].map((x,i)=>(
+          </tr></thead><tbody>{[{t:aw,inn:game.awayInnings,s:game.awayScore,h:awH,e:awE},{t:hm,inn:game.homeInnings,s:game.homeScore,h:hmH,e:hmE}].map((x,i)=>(
             <tr key={i}><td style={{padding:"3px 8px",fontWeight:800,fontSize:11,color:(i===0&&isTop)||(i===1&&!isTop)?K.accent:K.text}}>
               <div style={{display:"flex",alignItems:"center",gap:4}}><TeamLogo team={x.t} size={14}/>{x.t?.abbr}</div></td>
-              {(x.inn||[]).map((r:any,j:number)=><td key={j} style={{padding:"3px 4px",textAlign:"center",fontWeight:700,fontSize:11,color:r!==null?K.text:K.muted}}>{r!==null?r:"—"}</td>)}
+              {Array.from({length: totalCols}).map((_,j:number)=>{
+                const r = (x.inn||[])[j];
+                return <td key={j} style={{padding:"3px 4px",textAlign:"center",fontWeight:700,fontSize:11,color:r!==undefined&&r!==null?K.text:K.muted}}>{r!==undefined&&r!==null?r:"—"}</td>
+              })}
               <td style={{padding:"3px 6px",textAlign:"center",fontWeight:900,fontSize:14,color:K.accent}}>{x.s}</td>
               <td style={{padding:"3px 6px",textAlign:"center",fontWeight:700}}>{x.h}</td>
               <td style={{padding:"3px 6px",textAlign:"center",fontWeight:700,color:K.red}}>{x.e}</td></tr>))}</tbody></table>
@@ -390,7 +575,7 @@ export function LiveGame({ data, id, nav }: any) {
             <div style={{textAlign:"center"}}><div style={{fontSize:9,fontWeight:700,color:K.muted}}>CONTEO</div><div style={{display:"flex",gap:8,marginTop:2}}><span style={{fontSize:20,fontWeight:900,color:K.green}}>B:{count.balls||0}</span><span style={{fontSize:20,fontWeight:900,color:K.red}}>S:{count.strikes||0}</span></div></div>
             <div style={{textAlign:"center"}}><div style={{fontSize:9,fontWeight:700,color:K.muted}}>LANZ</div><div style={{fontSize:18,fontWeight:900,color:K.blue}}>{pitcherPitchCount}</div></div>
             <button onClick={()=>setShowPitcher(true)} style={{padding:"6px 10px",borderRadius:8,background:noPitcher?K.red:K.border,border:"none",color:noPitcher?"#fff":K.dim,fontSize:10,fontWeight:700,cursor:"pointer"}}>{noPitcher?"⚠️":"🔄"} Pitcher</button>
-            <button onClick={()=>{if(confirm("¿Finalizar?"))finishGame(plays);}} style={{padding:"6px 10px",borderRadius:8,background:K.red,border:"none",color:"#fff",fontSize:10,fontWeight:700,cursor:"pointer"}}>🏁 FIN</button></div></div>
+            <button onClick={()=>{if(confirm("¿Seguro que deseas forzar el FINAL del juego?"))finishGame(plays);}} style={{padding:"6px 10px",borderRadius:8,background:K.red,border:"none",color:"#fff",fontSize:10,fontWeight:700,cursor:"pointer"}}>🏁 FIN</button></div></div>
 
         {/* LEFT LINEUP */}
         <div style={{background:"#0d1220",borderRight:`1px solid ${K.border}`,overflow:"auto",padding:"8px 6px"}}>
@@ -446,16 +631,18 @@ export function LiveGame({ data, id, nav }: any) {
               <Btn label="STRIKE" icon="🔴" color={K.red} onClick={()=>addStrike("called")} disabled={noPitcher}/>
               <Btn label="SWING" icon="💨" color="#f97316" onClick={()=>addStrike("swinging")} disabled={noPitcher}/>
               <Btn label="FOUL" icon="📐" color={K.yellow} onClick={()=>addStrike("foul")} disabled={noPitcher}/></div></div>
-          <div><div style={{fontSize:9,fontWeight:900,color:K.muted,marginBottom:4,paddingLeft:4}}>HITS</div>
+          <div><div style={{fontSize:9,fontWeight:900,color:K.muted,marginBottom:4,paddingLeft:4}}>HITS Y ERROR</div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:5}}>
               <Btn label="1B" icon="🏏" color={K.accent} onClick={()=>prepareHit("1B")} size="lg" disabled={noPitcher}/>
               <Btn label="2B" icon="✌️" color="#14b8a6" onClick={()=>prepareHit("2B")} size="lg" disabled={noPitcher}/>
               <Btn label="3B" icon="🔱" color="#6366f1" onClick={()=>prepareHit("3B")} size="lg" disabled={noPitcher}/>
-              <Btn label="HR" icon="💥" color={K.red} bg={`${K.red}22`} onClick={()=>prepareHit("HR")} size="lg" disabled={noPitcher}/></div></div>
+              <Btn label="HR" icon="💥" color={K.red} bg={`${K.red}22`} onClick={()=>prepareHit("HR")} size="lg" disabled={noPitcher}/>
+              {/* ── BOTON DE ERROR RESTAURADO ── */}
+              <Btn label="ERROR" icon="🫣" color="#f97316" onClick={()=>prepareHit("E")} size="lg" disabled={noPitcher}/>
+            </div></div>
           <div><div style={{fontSize:9,fontWeight:900,color:K.muted,marginBottom:4,paddingLeft:4}}>OUTS DE BATAZO</div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:5}}>
               <Btn label="K (PONCHE)" icon="💨" color="#a78bfa" onClick={()=>registerOut("K")} disabled={noPitcher} size="lg"/>
-              {/* ── BOTON MAESTRO DEL TRAZADOR ── */}
               <Btn label="EN JUEGO / BATAZO" icon="⚾" color={K.blue} bg={`${K.blue}22`} onClick={()=>{if(!noPitcher){setFieldRoute([]);setShowBatazo(true);}}} disabled={noPitcher} size="lg"/>
               </div></div>
           <div style={{display:"grid",gridTemplateColumns:"1fr",gap:5}}>
@@ -463,7 +650,10 @@ export function LiveGame({ data, id, nav }: any) {
           <div><div style={{fontSize:9,fontWeight:900,color:K.muted,marginBottom:4,paddingLeft:4}}>+ CARRERAS EQUIPO / JUGADOR</div>
             <div style={{display:"flex",gap:4}}>
               <button onClick={()=>setShowAssignRun(true)} style={{flex:1,padding:"8px 4px",borderRadius:8,border:`1px solid ${K.accent}`,background:`${K.accent}22`,color:K.accent,fontWeight:900,fontSize:11,cursor:"pointer"}} title="Anotar a un jugador">🏃 +CA</button>
-              {[1,2,3].map(n=><button key={n} onClick={async()=>{const k=isTop?"awayScore":"homeScore";const ik=isTop?"awayInnings":"homeInnings";const ni=[...(game[ik]||[])];ni[game.inning-1]=(ni[game.inning-1]||0)+n;await up({[k]:(game[k]||0)+n,[ik]:ni});}} style={{flex:1,padding:"8px 4px",borderRadius:8,border:`1px solid ${K.accent}44`,background:K.input,color:K.accent,fontWeight:900,fontSize:13,cursor:"pointer"}} title="Anotar al equipo">+{n}</button>)}</div></div></div>
+              {[1,2,3].map(n=><button key={n} onClick={async()=>{
+                const u = scoreRuns(n);
+                await processPlayAndCheckGameOver(u, 0);
+              }} style={{flex:1,padding:"8px 4px",borderRadius:8,border:`1px solid ${K.accent}44`,background:K.input,color:K.accent,fontWeight:900,fontSize:13,cursor:"pointer"}} title="Anotar al equipo">+{n}</button>)}</div></div></div>
 
         {/* BOTTOM LOG */}
         <div style={{gridColumn:"1/-1",background:"#0a0e1a",borderTop:`2px solid ${K.border}`,padding:"6px 12px",display:"flex",alignItems:"center",gap:10}}>
@@ -547,6 +737,25 @@ export function LiveGame({ data, id, nav }: any) {
           <div style={{textAlign:"center",padding:10,background:K.input,borderRadius:12}}>
             <span style={{fontSize:28}}>{{"1B":"🏏","2B":"✌️","3B":"🔱","HR":"💥","E":"🫣"}[showConfirm.type as string]}</span>
             <div style={{fontWeight:900,fontSize:16,color:K.text,marginTop:4}}>{currentBatter?.name}</div></div>
+          
+          {/* NUEVO: Selector de Jugador para el Error */}
+          {showConfirm.type === "E" && (
+            <div style={{marginTop:8, background:`${K.red}11`, padding:12, borderRadius:10, border:`1px solid ${K.red}44`}}>
+              <label style={{...S.label, color:K.red}}>¿Quién cometió el error?</label>
+              <select 
+                style={{...S.input, marginTop:6, width:"100%"}} 
+                value={showConfirm.extra?.errorPlayerId || ""} 
+                onChange={(e)=>{
+                  const sel = pitchLineup.find((p:any)=>p.id===e.target.value);
+                  setShowConfirm({...showConfirm, extra: {...showConfirm.extra, errorPlayerId: sel?.id, errorPlayerName: sel?.name}});
+                }}
+              >
+                <option value="">Selecciona al fildeador...</option>
+                {pitchLineup.map((p:any) => <option key={p.id} value={p.id}>{p.fieldPos} - {p.name}</option>)}
+              </select>
+            </div>
+          )}
+
           <div><label style={S.label}>Carreras que anotan</label>
             <div style={{display:"flex",gap:6,justifyContent:"center"}}>{[0,1,2,3,4].map(n=><button key={n} onClick={()=>setShowConfirm({...showConfirm,runs:n})} style={{width:44,height:44,borderRadius:12,border:`2px solid ${showConfirm.runs===n?K.accent:K.border}`,background:showConfirm.runs===n?`${K.accent}22`:K.input,color:showConfirm.runs===n?K.accent:K.text,fontWeight:900,fontSize:18,cursor:"pointer"}}>{n}</button>)}</div></div>
           <div><label style={S.label}>Bases (toca para ajustar)</label>
@@ -558,7 +767,8 @@ export function LiveGame({ data, id, nav }: any) {
           {batLineup.map((p:any) => (
              <button key={p.id} onClick={async()=>{
                 const play = {...makePlay("RUN",{ca:1,isPitch:false}), playerId:p.id, playerName:p.name};
-                await up({plays:[...plays,play], ...(addTeamRun ? scoreRuns(1) : {})});
+                const u = {plays:[...plays,play], ...(addTeamRun ? scoreRuns(1) : {})};
+                await processPlayAndCheckGameOver(u, 0);
                 setShowAssignRun(false); setAddTeamRun(false);
              }} style={{padding:12,borderRadius:10,border:`1px solid ${K.border}`,background:K.input,color:K.text,fontWeight:700,fontSize:14,cursor:"pointer",textAlign:"left"}}>#{p.number} {p.name}</button>))}
           <label style={{display:"flex", alignItems:"center", gap:8, marginTop:12}}><input type="checkbox" checked={addTeamRun} onChange={(e)=>setAddTeamRun(e.target.checked)} /><span style={{fontSize:12, color:K.muted}}>Sumar también al marcador general</span></label>
@@ -681,7 +891,6 @@ export function WatchGame({ data, id, nav }: any) {
   const isTop=game.half==="top";
   const batTm=isTop?aw:hm;
 
-  // ── 🧠 MOTOR DE ESTADÍSTICAS EN TIEMPO REAL ──
   const getStats = (pid:string) => {
     let vb=0,h=0,hr=0,ci=0,ca=0,bb=0,k=0,db=0,tb=0,sb=0,pa=0,e=0;
     (game.plays||[]).forEach((p:any) => { 
@@ -710,7 +919,6 @@ export function WatchGame({ data, id, nav }: any) {
     return { h,bb,K:k,cl,outs,pitches, ip:(Math.floor(outs/3)+(outs%3)/10).toFixed(1) };
   };
 
-  // ── 🧠 MOTOR DE AGRUPACIÓN (ESTILO ESPN) ──
   const inningsList: any[] = [];
   let currentInning: any = null;
   let currentEvent: any = null; 
@@ -745,13 +953,11 @@ export function WatchGame({ data, id, nav }: any) {
 
   const toggleAb = (eventId: string) => setExpandedAbs(prev => ({...prev, [eventId]: !prev[eventId]}));
 
-  // Jugadores Actuales y sus Estadísticas del Partido
   const batLU_W = isTop ? (game.awayLineup||[]) : (game.homeLineup||[]);
   const bIdx_W = isTop ? (game.awayBatterIdx||0) : (game.homeBatterIdx||0);
   const currBat_W = batLU_W[bIdx_W % batLU_W.length] || null;
   const pitch_W = game.currentPitcher; 
 
-  // ── LA MAGIA DE LAS FOTOS: Buscamos el perfil completo ──
   const fullBat = currBat_W ? data.players.find((p:any) => p.id === currBat_W.id) : null;
   const fullPit = pitch_W ? data.players.find((p:any) => p.id === pitch_W.id) : null;
 
@@ -771,7 +977,7 @@ export function WatchGame({ data, id, nav }: any) {
       
       <Scoreboard game={game} aw={aw} hm={hm} isTop={isTop} batTm={batTm}/>
 
-      {/* ── PANEL DUELO ULTRALIMPIO ESTILO ESPN (Cero bases, cero outs, con fotos) ── */}
+      {/* ── PANEL DUELO ULTRALIMPIO ESTILO ESPN ── */}
       {game.status !== "final" && (
         <div style={{...S.card, padding:"16px 20px", marginBottom:16, border:`1px solid ${K.border}`}}>
           <div style={{display:"flex", alignItems:"center", justifyContent:"center", gap:20}}>
@@ -792,7 +998,7 @@ export function WatchGame({ data, id, nav }: any) {
               </div>
             </div>
             
-            {/* Conteo Central (SOLO B y S) */}
+            {/* Conteo Central */}
             <div style={{textAlign:"center", minWidth:120, borderLeft:`1px solid ${K.border}66`, borderRight:`1px solid ${K.border}66`, padding:"0 20px"}}>
               <div style={{display:"flex", justifyContent:"center", alignItems:"center", gap:4}}>
                 <div style={{fontSize:16, fontWeight:900, color:K.green, width:18, textAlign:"right"}}>B:</div>
@@ -828,7 +1034,7 @@ export function WatchGame({ data, id, nav }: any) {
         </div>
       )}
 
-      {/* PESTAÑAS INTEGRADAS (PBP vs BOX SCORE) */}
+      {/* PESTAÑAS INTEGRADAS */}
       <div style={{display:"flex", gap:10, marginTop: 24, marginBottom:16, borderBottom:`2px solid ${K.border}`}}>
         <div onClick={()=>setActiveTab("pbp")} style={{padding:"8px 16px", fontWeight:900, fontSize:13, color:activeTab==="pbp"?K.accent:K.muted, borderBottom:activeTab==="pbp"?`3px solid ${K.accent}`:"none", cursor:"pointer", marginBottom:-2}}>Jugada a Jugada</div>
         <div onClick={()=>setActiveTab("box")} style={{padding:"8px 16px", fontWeight:900, fontSize:13, color:activeTab==="box"?K.accent:K.muted, borderBottom:activeTab==="box"?`3px solid ${K.accent}`:"none", cursor:"pointer", marginBottom:-2}}>Box Score</div>

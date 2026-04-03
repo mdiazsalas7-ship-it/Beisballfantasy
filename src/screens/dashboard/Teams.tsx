@@ -402,7 +402,7 @@ export function TeamDetail({ data, id, nav }: any) {
   );
 }
 
-// ═══ UPPER DECK CARD (BARAJITA) ═══
+// ═══ UPPER DECK CARD (BARAJITA REDISEÑADA) ═══
 export function UpperDeckCard({ data, id, nav }: any) {
   const p = data.players.find((x: any) => x.id === id);
   if (!p)
@@ -417,6 +417,7 @@ export function UpperDeckCard({ data, id, nav }: any) {
   const fld = calcFielding(p.fielding);
   const [tab, setTab] = useState('bat');
   const inicial = (p.name || '?').charAt(0).toUpperCase();
+  const hasPhoto = !!p.photoUrl;
 
   const renderStats = (stats: any) => (
     <div
@@ -455,160 +456,120 @@ export function UpperDeckCard({ data, id, nav }: any) {
           overflow: 'hidden',
           border: `3px solid ${tm?.color || K.accent}`,
           background: K.card,
-          boxShadow: `0 20px 60px rgba(0,0,0,.5), 0 0 0 1px ${K.border}`,
+          boxShadow: `0 20px 60px rgba(0,0,0,.6), 0 0 0 1px ${K.border}`,
+          position: 'relative'
         }}
       >
-        {/* Card header */}
+        {/* ── ZONA DE FOTO PROTAGÓNICA (FULL BLEED) ── */}
         <div
           style={{
-            background: `linear-gradient(135deg,${tm?.color || K.blue},${
-              tm?.color || K.blue
-            }88,${K.card})`,
-            padding: '24px 20px 16px',
             position: 'relative',
-            overflow: 'hidden',
+            height: 320, // Altura gigante para la foto
+            background: hasPhoto 
+              ? `url(${p.photoUrl}) center 15% / cover no-repeat` 
+              : `linear-gradient(135deg,${tm?.color || K.blue},${tm?.color || K.blue}44,${K.card})`,
+            display: 'flex',
+            flexDirection: 'column',
+            justifyContent: 'space-between',
+            padding: '20px',
           }}
         >
+          {/* Sombra base para asegurar lectura del texto si la foto es muy clara */}
+          <div style={{ 
+            position: 'absolute', inset: 0, 
+            background: hasPhoto 
+              ? 'linear-gradient(to bottom, rgba(0,0,0,0.4) 0%, transparent 30%, transparent 60%, rgba(0,0,0,0.95) 100%)' 
+              : 'transparent',
+            zIndex: 0
+          }} />
+
+          {/* Animación Holográfica Brillante */}
           <div
             style={{
-              position: 'absolute',
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0,
-              background:
-                'linear-gradient(105deg,transparent 40%,rgba(255,255,255,.08) 45%,rgba(255,255,255,.15) 50%,rgba(255,255,255,.08) 55%,transparent 60%)',
+              position: 'absolute', inset: 0,
+              background: 'linear-gradient(105deg,transparent 40%,rgba(255,255,255,.08) 45%,rgba(255,255,255,.2) 50%,rgba(255,255,255,.08) 55%,transparent 60%)',
               backgroundSize: '200% 100%',
               animation: 'cardShine 4s ease-in-out infinite',
+              pointerEvents: 'none',
+              zIndex: 1
             }}
           />
-          <div
-            style={{
-              position: 'absolute',
-              top: -10,
-              right: 10,
-              fontSize: 100,
-              fontWeight: 900,
-              color: 'rgba(255,255,255,.06)',
-              lineHeight: 1,
-            }}
-          >
-            #{p.number || '?'}
-          </div>
-          <div style={{ position: 'relative', zIndex: 1 }}>
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                marginBottom: 12,
-              }}
-            >
-              <TeamLogo team={tm} size={36} />
-              <span
-                style={{
-                  fontSize: 11,
-                  color: 'rgba(255,255,255,.6)',
-                  fontWeight: 700,
-                  textTransform: 'uppercase',
-                  letterSpacing: '.1em',
-                }}
-              >
-                {tm?.name || ''}
+
+          {/* Letra inicial gigante si no hay foto */}
+          {!hasPhoto && (
+            <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 0 }}>
+               <span style={{ fontWeight: 900, color: 'rgba(255,255,255,0.06)', fontSize: 180, marginTop: 40 }}>{inicial}</span>
+            </div>
+          )}
+
+          {/* ── HEADER SUPERIOR: Equipo y Número ── */}
+          <div style={{ position: 'relative', zIndex: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+            <div style={{ 
+              display: 'flex', alignItems: 'center', gap: 8, 
+              background: 'rgba(0,0,0,0.6)', padding: '6px 12px', 
+              borderRadius: 20, backdropFilter: 'blur(4px)',
+              border: `1px solid rgba(255,255,255,0.1)`
+            }}>
+              <TeamLogo team={tm} size={20} />
+              <span style={{ fontSize: 10, color: '#fff', fontWeight: 900, textTransform: 'uppercase', letterSpacing: 1 }}>
+                {tm?.abbr || tm?.name || 'EQUIPO'}
               </span>
             </div>
+            
+            <div style={{ 
+              fontSize: 54, fontWeight: 900, color: '#fff', 
+              lineHeight: 0.8, textShadow: '0 4px 12px rgba(0,0,0,0.8)',
+              marginTop: -4, fontStyle: 'italic'
+            }}>
+              #{p.number || '?'}
+            </div>
+          </div>
 
-            {/* Player photo or initial */}
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 14,
-                marginBottom: 10,
-              }}
-            >
-              <div
-                style={{
-                  width: 64,
-                  height: 64,
-                  borderRadius: '50%',
-                  overflow: 'hidden',
-                  border: '3px solid rgba(255,255,255,.3)',
-                  background: tm?.color || K.accent,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  flexShrink: 0,
-                }}
-              >
-                {p.photoUrl ? (
-                  <img
-                    src={p.photoUrl}
-                    style={{
-                      width: '100%',
-                      height: '100%',
-                      objectFit: 'cover',
-                    }}
-                  />
-                ) : (
+          {/* ── FOOTER INFERIOR: Nombre y Badges ── */}
+          <div style={{ position: 'relative', zIndex: 2 }}>
+            <h2 style={{ 
+              fontSize: 32, fontWeight: 900, color: '#fff', 
+              lineHeight: 1.1, marginBottom: 10, 
+              textShadow: '0 2px 8px rgba(0,0,0,0.9)' 
+            }}>
+              {p.name}
+            </h2>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              {[
+                p.position,
+                p.age && `${p.age} años`,
+                p.bats && `B:${p.bats} L:${p.throws || 'D'}`,
+              ]
+                .filter(Boolean)
+                .map((badge, i) => (
                   <span
-                    style={{ fontWeight: 900, color: '#fff', fontSize: 28 }}
+                    key={i}
+                    style={{
+                      padding: '4px 12px',
+                      borderRadius: 20,
+                      background: i === 0 ? tm?.color || K.accent : 'rgba(255,255,255,.15)',
+                      backdropFilter: i !== 0 ? 'blur(4px)' : 'none',
+                      fontSize: 11,
+                      fontWeight: 800,
+                      color: '#fff',
+                      boxShadow: '0 2px 4px rgba(0,0,0,0.5)'
+                    }}
                   >
-                    {inicial}
+                    {badge}
                   </span>
-                )}
-              </div>
-              <div>
-                <h2
-                  style={{
-                    fontSize: 24,
-                    fontWeight: 900,
-                    color: '#fff',
-                    lineHeight: 1.1,
-                    marginBottom: 4,
-                  }}
-                >
-                  {p.name}
-                </h2>
-                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                  {[
-                    p.position,
-                    `#${p.number || '—'}`,
-                    p.age && `${p.age} años`,
-                    p.bats && `B:${p.bats} L:${p.throws || 'D'}`,
-                  ]
-                    .filter(Boolean)
-                    .map((badge, i) => (
-                      <span
-                        key={i}
-                        style={{
-                          padding: '3px 10px',
-                          borderRadius: 20,
-                          background:
-                            i === 0
-                              ? 'rgba(255,255,255,.2)'
-                              : 'rgba(255,255,255,.12)',
-                          fontSize: 11,
-                          fontWeight: 700,
-                          color: i === 0 ? '#fff' : 'rgba(255,255,255,.8)',
-                        }}
-                      >
-                        {badge}
-                      </span>
-                    ))}
-                </div>
-              </div>
+                ))}
             </div>
           </div>
         </div>
 
-        {/* Quick stats */}
+        {/* ── DATOS RÁPIDOS (QUICK STATS) ── */}
         {bat && bat.VB > 0 && (
           <div
             style={{
               display: 'grid',
               gridTemplateColumns: 'repeat(4,1fr)',
               borderBottom: `1px solid ${K.border}`,
+              background: 'rgba(0,0,0,0.2)'
             }}
           >
             {[
@@ -625,7 +586,7 @@ export function UpperDeckCard({ data, id, nav }: any) {
                   borderRight: `1px solid ${K.border}`,
                 }}
               >
-                <div style={{ fontSize: 9, fontWeight: 700, color: K.muted }}>
+                <div style={{ fontSize: 9, fontWeight: 800, color: K.muted }}>
                   {s.l}
                 </div>
                 <div
@@ -633,7 +594,7 @@ export function UpperDeckCard({ data, id, nav }: any) {
                     fontSize: 18,
                     fontWeight: 900,
                     color: K.accent,
-                    marginTop: 1,
+                    marginTop: 2,
                   }}
                 >
                   {s.v}
@@ -643,13 +604,14 @@ export function UpperDeckCard({ data, id, nav }: any) {
           </div>
         )}
 
-        {/* Pitching quick stats */}
+        {/* Pitcheo quick stats */}
         {pit && pit.IL > 0 && (!bat || bat.VB === 0) && (
           <div
             style={{
               display: 'grid',
               gridTemplateColumns: 'repeat(4,1fr)',
               borderBottom: `1px solid ${K.border}`,
+              background: 'rgba(0,0,0,0.2)'
             }}
           >
             {[
@@ -666,7 +628,7 @@ export function UpperDeckCard({ data, id, nav }: any) {
                   borderRight: `1px solid ${K.border}`,
                 }}
               >
-                <div style={{ fontSize: 9, fontWeight: 700, color: K.muted }}>
+                <div style={{ fontSize: 9, fontWeight: 800, color: K.muted }}>
                   {s.l}
                 </div>
                 <div
@@ -674,7 +636,7 @@ export function UpperDeckCard({ data, id, nav }: any) {
                     fontSize: 18,
                     fontWeight: 900,
                     color: K.blue,
-                    marginTop: 1,
+                    marginTop: 2,
                   }}
                 >
                   {s.v}
@@ -684,7 +646,7 @@ export function UpperDeckCard({ data, id, nav }: any) {
           </div>
         )}
 
-        {/* Detailed stats tabs */}
+        {/* ── PESTAÑAS DE ESTADÍSTICAS DETALLADAS ── */}
         <div style={{ padding: 16 }}>
           <div style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
             {[
@@ -705,30 +667,30 @@ export function UpperDeckCard({ data, id, nav }: any) {
             (bat && bat.VB > 0 ? (
               renderStats(bat)
             ) : (
-              <p style={{ textAlign: 'center', color: K.muted, padding: 10 }}>
-                Sin datos
+              <p style={{ textAlign: 'center', color: K.muted, padding: 10, fontSize: 12, fontWeight: 700 }}>
+                Sin turnos oficiales
               </p>
             ))}
           {tab === 'pit' &&
             (pit && pit.IL > 0 ? (
               renderStats(pit)
             ) : (
-              <p style={{ textAlign: 'center', color: K.muted, padding: 10 }}>
-                Sin datos
+              <p style={{ textAlign: 'center', color: K.muted, padding: 10, fontSize: 12, fontWeight: 700 }}>
+                Sin labor de pitcheo
               </p>
             ))}
           {tab === 'fld' &&
             (fld && fld.JJ > 0 ? (
               renderStats(fld)
             ) : (
-              <p style={{ textAlign: 'center', color: K.muted, padding: 10 }}>
-                Sin datos
+              <p style={{ textAlign: 'center', color: K.muted, padding: 10, fontSize: 12, fontWeight: 700 }}>
+                Sin datos defensivos
               </p>
             ))}
         </div>
       </div>
 
-      {/* Edit button - only for admins */}
+      {/* Edit button - solo admins */}
       {data.isAdmin && (
         <div
           style={{ display: 'flex', gap: 8, maxWidth: 380, margin: '0 auto' }}
@@ -746,7 +708,7 @@ export function UpperDeckCard({ data, id, nav }: any) {
               }}
             >
               <IcoEdit size={14} />
-              Editar
+              Editar Jugador
             </span>
           </button>
         </div>

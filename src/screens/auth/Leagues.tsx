@@ -18,7 +18,14 @@ export default function Leagues({ leagues, onSelect, isAdmin }: any) {
   return (
     <div style={{ ...S.sec, animation: "slideUp .4s ease" }}>
       <div style={{ textAlign: "center", padding: "40px 16px 28px" }}>
-        <div style={{ fontSize: 56, marginBottom: 14 }}>⚾</div>
+        {/* ── AQUÍ ESTÁ EL LOGO REEMPLAZANDO A LA PELOTA ── */}
+        <div style={{ display: "flex", justifyContent: "center", marginBottom: 14 }}>
+          <img 
+            src="https://i.postimg.cc/XJr7JyC0/image.png" 
+            alt="Logo Béisbol Menor" 
+            style={{ width: 90, height: 90, objectFit: 'contain', filter: 'drop-shadow(0px 4px 8px rgba(0,0,0,0.2))' }} 
+          />
+        </div>
         <h2 style={{ fontSize: 28, fontWeight: 900, marginBottom: 8, background: `linear-gradient(135deg,${K.accent},${K.blue})`, WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>
           Béisbol Menor
         </h2>

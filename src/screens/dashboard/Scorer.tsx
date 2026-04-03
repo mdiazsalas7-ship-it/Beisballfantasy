@@ -4,7 +4,7 @@ import { styles as S, colors as K } from "../../config/theme.ts";
 import { IcoPlay, IcoEye, IcoBall, IcoCal } from "../../components/Icons.tsx";
 import { TeamLogo, Scoreboard, Empty, Modal } from "../../components/UI.tsx";
 
-// ── 🧠 LÓGICA DE BASES INTELIGENTES (CON JUGADORES) ──
+// ── 🧠 LÓGICA DE AVANCES Y RUTAS ──
 function advanceBases(bases: any[], hitType: string, batter: any): { newBases: any[], runnersScored: any[] } {
   const b = [...bases]; let scored: any[] = [];
   if (hitType === "HR") { scored = [b[0], b[1], b[2], batter].filter(x=>x); return { newBases: [null,null,null], runnersScored: scored }; }
@@ -22,7 +22,9 @@ function advanceAllRunners(bases: any[]): { newBases: any[], runnersScored: any[
   if (nb[2]) { scored.push(nb[2]); nb[2] = null; } if (nb[1]) { nb[2] = nb[1]; nb[1] = null; } if (nb[0]) { nb[1] = nb[0]; nb[0] = null; }
   return { newBases: nb, runnersScored: scored };
 }
+
 const FIELD_POS = ["P(1)","C(2)","1B(3)","2B(4)","3B(5)","SS(6)","LF(7)","CF(8)","RF(9)"];
+const POS_COORDS:any = { 1:{x:90,y:105}, 2:{x:90,y:175}, 3:{x:180,y:70}, 4:{x:135,y:5}, 5:{x:0,y:70}, 6:{x:45,y:5}, 7:{x:-15,y:-35}, 8:{x:90,y:-50}, 9:{x:195,y:-35} };
 
 export function ScorerPage({ data, nav }: any) {
   const scheduled = data.games.filter((g:any) => g.status === "scheduled").sort((a:any,b:any) => (a.date||"").localeCompare(b.date||""));
@@ -58,24 +60,16 @@ export function LiveGame({ data, id, nav }: any) {
   const [showTraditional,setShowTraditional] = useState(false);
   const [showSub,setShowSub] = useState<{side:"away"|"home",idx:number}|null>(null);
   const [showConfirm,setShowConfirm] = useState<any>(null);
-  const [showError,setShowError] = useState(false);
-  const [showRunnerAction,setShowRunnerAction] = useState<{type:"SB"|"CS"}|null>(null);
-  
-  const [awSP, setAwSP] = useState<any>(null);
-  const [hmSP, setHmSP] = useState<any>(null);
+  const [showRunnerAction,setShowRunnerAction] = useState<{type:"SB"|"CS"|"PK"}|null>(null);
   const [showAssignRun, setShowAssignRun] = useState(false);
   const [addTeamRun, setAddTeamRun] = useState(false);
 
-  useEffect(() => { 
-    const u = F.onDoc("games", id!, (docData: any) => {
-      setGame(docData);
-      if (docData && docData.status === "scheduled") {
-        setAwSP((prev: any) => prev || docData.awayStartingPitcher || null);
-        setHmSP((prev: any) => prev || docData.homeStartingPitcher || null);
-      }
-    }); 
-    return () => u && u(); 
-  }, [id]);
+  // ESTADOS DEL NUEVO TRAZADOR DEFENSIVO
+  const [showBatazo, setShowBatazo] = useState(false);
+  const [fieldRoute, setFieldRoute] = useState<number[]>([]);
+  const [fcRunnerSelect, setFcRunnerSelect] = useState(false);
+
+  useEffect(() => { const u = F.onDoc("games", id!, setGame); return () => u && u(); }, [id]);
 
   if (!game) return <div style={{...S.sec,textAlign:"center",padding:40}}><IcoBall size={40} color={K.accent} style={{animation:"spin 1.5s linear infinite",margin:"0 auto"}}/></div>;
 
@@ -92,9 +86,7 @@ export function LiveGame({ data, id, nav }: any) {
   const up = async (u:any) => await F.set("games",id!,u);
   const noPitcher = !pitcher;
 
-  const awBatIdx = game.awayBatterIdx || 0;
-  const hmBatIdx = game.homeBatterIdx || 0;
-  const batIdx = isTop ? awBatIdx : hmBatIdx;
+  const batIdx = isTop ? (game.awayBatterIdx||0) : (game.homeBatterIdx||0);
   const batIdxKey = isTop ? "awayBatterIdx" : "homeBatterIdx";
   const currentBatter = batLineup[batIdx % batLineup.length] || null;
   const batterObj = currentBatter ? {id: currentBatter.id, name: currentBatter.name} : {id:"ghost", name:"Bateador"};
@@ -103,16 +95,22 @@ export function LiveGame({ data, id, nav }: any) {
   const rawBases = game.bases || [null, null, null];
   const bases = rawBases.map((b: any) => b === true ? {id: "ghost", name: "Corredor"} : (b === false ? null : b));
 
+  // Mapa de Defensa (quién está en cada posición) para inyectarlo en la jugada
+  const buildDefenseMap = () => {
+    const map:Record<number,string> = {};
+    pitchLineup.forEach((p:any) => { if(p.fieldPos){ const num = parseInt(p.fieldPos.match(/\((\d)\)/)?.[1]||"0"); if(num) map[num] = p.id; } });
+    return map;
+  };
+
   const getStats = (pid:string) => {
     let vb=0,h=0,hr=0,ci=0,ca=0,bb=0,k=0,db=0,tb=0,sb=0,pa=0,e=0;
     plays.forEach((p:any) => { 
       if (p.errorPlayerId === pid) e++; 
       if (p.playerId !== pid) return; 
-      if (p.result !== "RUN" && p.result !== "SB" && p.result !== "CS") pa++; 
+      if (p.result !== "RUN" && p.result !== "SB" && p.result !== "CS" && p.result !== "PK") pa++; 
       if (["1B","2B","3B","HR"].includes(p.result)) { vb++; h++; if(p.result==="2B")db++; if(p.result==="3B")tb++; if(p.result==="HR")hr++; }
-      else if (["BB","HBP"].includes(p.result)) bb++;
-      else if (p.result === "SAC") {}
-      else if (["OUT","FLY","GROUND","K","DP"].includes(p.result)) { vb++; if(p.result==="K")k++; }
+      else if (["BB","IBB","HBP"].includes(p.result)) bb++;
+      else if (["OUT","FLY","GROUND","K","DP","FC"].includes(p.result)) { vb++; if(p.result==="K")k++; }
       else if (p.result === "E") vb++;
       ci += (p.ci||0); ca += (p.ca||0); if(p.result==="SB")sb++;
     });
@@ -123,99 +121,18 @@ export function LiveGame({ data, id, nav }: any) {
     let h=0,bb=0,k=0,cl=0,outs=0,pitches=0;
     plays.forEach((p:any) => { if(p.pitcherId!==pid) return; if(p.isPitch) pitches++; if(!p.result) return;
       if(["1B","2B","3B","HR","E"].includes(p.result)) h++;
-      if(["BB","HBP"].includes(p.result)) bb++;
+      if(["BB","IBB","HBP"].includes(p.result)) bb++;
       if(p.result==="K") k++;
-      if(["OUT","FLY","GROUND","K","SAC"].includes(p.result)) outs++;
+      if(["OUT","FLY","GROUND","K","SAC","FC"].includes(p.result)) outs++;
       if(p.result==="DP") outs+=2;
       if(p.isEarned!==false) cl+=(p.ci||0);
     });
     return { h,bb,K:k,cl,outs,pitches, ip:(Math.floor(outs/3)+(outs%3)/10).toFixed(1) };
   };
 
-  const getDefName = (pos: string) => {
-    const p = pitchLineup.find((x:any) => x.fieldPos === pos);
-    if (!p) return "";
-    const n = p.name.split(" ");
-    return n.length > 1 ? `${n[0].charAt(0)}. ${n[n.length-1]}` : n[0]; 
-  };
+  const getDefName = (pos: string) => { const p = pitchLineup.find((x:any) => x.fieldPos === pos); if (!p) return ""; const n = p.name.split(" "); return n.length > 1 ? `${n[0].charAt(0)}. ${n[n.length-1]}` : n[0]; };
 
-  // ── LINEUP SETUP ──
-  if (game.status === "scheduled") {
-    const awP = data.players.filter((p:any) => p.teamId === game.awayTeamId);
-    const hmP = data.players.filter((p:any) => p.teamId === game.homeTeamId);
-
-    const toggle = async (pid:string, side:"away"|"home") => {
-      const key = side==="away"?"awayLineup":"homeLineup"; const cur = game[key]||[];
-      const pl = data.players.find((p:any) => p.id===pid); if(!pl) return;
-      const entry = { id:pid, name:pl.name, number:pl.number, position:pl.position, fieldPos:"" };
-      const ex = cur.find((p:any) => p.id===pid);
-      if(ex) await up({[key]:cur.filter((p:any)=>p.id!==pid)});
-      else await up({[key]:[...cur,entry]});
-    };
-
-    const awLU = game.awayLineup||[]; const hmLU = game.homeLineup||[];
-    const awAllPos = awLU.length>0 && awLU.every((p:any)=>p.fieldPos);
-    const hmAllPos = hmLU.length>0 && hmLU.every((p:any)=>p.fieldPos);
-    const canStart = awLU.length>0 && hmLU.length>0 && awSP && hmSP && awAllPos && hmAllPos;
-
-    return (
-      <div style={S.sec}><h2 style={S.secT}>Preparar Juego</h2>
-        <div style={{...S.card,padding:16,marginBottom:16,background:`linear-gradient(135deg,${K.accentDk},${K.card})`}}>
-          <div style={{display:"flex",justifyContent:"center",gap:20,alignItems:"center"}}>
-            <div style={{textAlign:"center"}}><TeamLogo team={aw} size={44}/><div style={{fontSize:11,fontWeight:700,color:K.text,marginTop:4}}>{aw?.name}</div></div>
-            <span style={{fontWeight:900,fontSize:18,color:K.muted}}>VS</span>
-            <div style={{textAlign:"center"}}><TeamLogo team={hm} size={44}/><div style={{fontSize:11,fontWeight:700,color:K.text,marginTop:4}}>{hm?.name}</div></div></div></div>
-
-        {[{label:"Visitante",team:aw,players:awP,lineup:awLU,side:"away" as const,sp:awSP,setSP:setAwSP},
-          {label:"Local",team:hm,players:hmP,lineup:hmLU,side:"home" as const,sp:hmSP,setSP:setHmSP}].map(({label,team,players,lineup,side,sp,setSP})=>(
-          <div key={side} style={{...S.card,marginBottom:12,overflow:"hidden"}}>
-            <div style={{background:team?.color||K.accent,padding:"8px 14px",display:"flex",justifyContent:"space-between"}}>
-              <span style={{fontWeight:900,fontSize:12,color:"#fff"}}>{label}: {team?.name}</span>
-              <span style={{fontSize:10,color:"rgba(255,255,255,.7)",fontWeight:700}}>{lineup.length}</span></div>
-            <div style={{padding:10}}>
-              {players.map((p:any) => { const inL = lineup.find((l:any)=>l.id===p.id); return (
-                <div key={p.id} style={{display:"flex",alignItems:"center",padding:"8px 6px",borderBottom:`1px solid ${K.border}`,background:inL?`${K.accent}11`:"transparent",borderRadius:8,marginBottom:2}}>
-                  <div onClick={()=>toggle(p.id,side)} style={{width:20,height:20,borderRadius:6,border:`2px solid ${inL?K.accent:K.border}`,background:inL?K.accent:"transparent",display:"flex",alignItems:"center",justifyContent:"center",marginRight:10,fontSize:12,color:"#fff",fontWeight:900,cursor:"pointer",flexShrink:0}}>{inL?"✓":""}</div>
-                  <span style={{fontWeight:800,fontSize:13,color:K.muted,width:28}}>#{p.number||"—"}</span>
-                  <span style={{fontWeight:700,fontSize:13,flex:1}}>{p.name}</span>
-                  {inL ? <select value={inL.fieldPos||""} onClick={(e:any)=>e.stopPropagation()} onChange={async(e:any)=>{
-                    const key=side==="away"?"awayLineup":"homeLineup";const lu=[...(game[key]||[])];
-                    const idx=lu.findIndex((l:any)=>l.id===p.id);if(idx>=0){lu[idx]={...lu[idx],fieldPos:e.target.value};await up({[key]:lu});}
-                  }} style={{...S.select,padding:"4px 6px",fontSize:10,width:64,flexShrink:0}}>
-                    <option value="">Pos</option>{FIELD_POS.map(fp=><option key={fp} value={fp}>{fp}</option>)}
-                  </select> : <span style={{fontSize:10,color:K.muted}}>{p.position}</span>}
-                </div>); })}
-            </div>
-            <div style={{padding:"8px 10px",borderTop:`2px solid ${K.blue}33`,background:K.input}}>
-              <div style={{fontSize:10,fontWeight:900,color:K.blue,marginBottom:6}}>⚾ PITCHER ABRIDOR</div>
-              {sp ? <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-                <span style={{fontWeight:800,fontSize:13}}>#{sp.number} {sp.name}</span>
-                <button onClick={()=>setSP(null)} style={{background:"none",border:"none",color:K.red,fontSize:10,cursor:"pointer",fontWeight:700}}>Cambiar</button></div>
-              : <div style={{display:"flex",flexDirection:"column",gap:4,maxHeight:100,overflow:"auto"}}>
-                {lineup.map((p:any) => (
-                  <button key={p.id} onClick={()=>setSP(p)} style={{display:"flex",alignItems:"center",gap:6,padding:"6px 8px",borderRadius:8,border:`1px solid ${K.border}`,background:K.card,cursor:"pointer",textAlign:"left",fontSize:11}}>
-                    <span style={{fontWeight:800,color:K.muted}}>#{p.number}</span>
-                    <span style={{fontWeight:700,flex:1}}>{p.name}</span></button>))}
-                {lineup.length===0&&<span style={{fontSize:10,color:K.red}}>Agrega jugadores primero</span>}
-              </div>}
-            </div>
-          </div>))}
-
-        {!canStart&&<div style={{padding:"10px 14px",borderRadius:12,background:`${K.red}15`,border:`1px solid ${K.red}33`,marginBottom:12,textAlign:"center"}}>
-          <span style={{fontSize:11,fontWeight:700,color:K.red}}>⚠️ Lineup completo + posiciones de campo (1-9) + pitcher abridor para ambos equipos</span></div>}
-
-        <button onClick={async()=>{if(!canStart)return;
-          await up({status:"live",count:{balls:0,strikes:0},awayBatterIdx:0,homeBatterIdx:0,
-            currentPitcher:{id:hmSP.id,name:hmSP.name,number:hmSP.number},
-            awayStartingPitcher:awSP,homeStartingPitcher:hmSP, bases:[null,null,null]});
-        }} style={{...S.btn(canStart?"primary":"ghost"),width:"100%",padding:16,fontSize:15,opacity:canStart?1:0.5}} disabled={!canStart}>
-          <span style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8}}><IcoPlay size={18}/>INICIAR JUEGO</span></button>
-      </div>);
-  }
-
-  // ══════════════════════════════════════
-  // LIVE LOGIC
-  // ══════════════════════════════════════
+  // ── CORE LOGIC ──
   const resetCount = () => ({balls:0,strikes:0});
   const nextBatter = () => batLineup.length===0 ? batIdx : (batIdx+1)%batLineup.length;
   const scoreRuns = (runs:number) => { if(runs<=0) return {}; const k=isTop?"awayScore":"homeScore"; const ik=isTop?"awayInnings":"homeInnings"; const ni=[...(game[ik]||[])]; ni[game.inning-1]=(ni[game.inning-1]||0)+runs; return {[k]:(game[k]||0)+runs,[ik]:ni}; };
@@ -236,7 +153,8 @@ export function LiveGame({ data, id, nav }: any) {
     teamId:isTop?game.awayTeamId:game.homeTeamId, team:isTop?"away":"home", result,
     ci:0, ca:0, isEarned:true,
     pitcherId:pitcher?.id||null, pitcherName:pitcher?.name||null,
-    isPitch:true, inning:game.inning, half:game.half, timestamp:Date.now(), ...extra,
+    isPitch:true, inning:game.inning, half:game.half, timestamp:Date.now(), 
+    defenseMap: buildDefenseMap(), ...extra,
   });
 
   const prepareHit = (type:string) => {
@@ -248,23 +166,18 @@ export function LiveGame({ data, id, nav }: any) {
   const confirmHit = async () => {
     if(!showConfirm) return; const{type,runs,newBases,runnersScored}=showConfirm;
     const play=makePlay(type,{ci:runs,ca:type==="HR"?1:0, ...(showConfirm.extra||{})});
-    
-    const runPlays = (runnersScored || [])
-      .filter((r:any) => r.id !== currentBatter?.id) 
-      .slice(0, runs)
-      .map((r:any) => ({...makePlay("RUN", {ca:1, isPitch:false}), playerId: r.id, playerName: r.name}));
-
+    const runPlays = (runnersScored || []).filter((r:any) => r.id !== currentBatter?.id).slice(0, runs).map((r:any) => ({...makePlay("RUN", {ca:1, isPitch:false}), playerId: r.id, playerName: r.name}));
     await up({plays:[...plays, play, ...runPlays],bases:newBases,count:resetCount(),[batIdxKey]:nextBatter(),...scoreRuns(runs)});
     setShowConfirm(null);
   };
 
-  const addBall = async () => {
+  const addBall = async (isIBB:boolean = false) => {
     if(noPitcher){setShowPitcher(true);return;}
-    const b=(count.balls||0)+1;
+    const b = isIBB ? 4 : (count.balls||0)+1;
     if(b>=4){ 
       const{newBases,runnersScored}=walkBases(bases, batterObj);
       const runPlays = runnersScored.map((r:any) => ({...makePlay("RUN", {ca:1, isPitch:false}), playerId: r.id, playerName: r.name}));
-      await up({plays:[...plays,makePlay("BB",{ci:runnersScored.length}), ...runPlays],bases:newBases,count:resetCount(),[batIdxKey]:nextBatter(),...scoreRuns(runnersScored.length)});
+      await up({plays:[...plays,makePlay(isIBB?"IBB":"BB",{ci:runnersScored.length}), ...runPlays],bases:newBases,count:resetCount(),[batIdxKey]:nextBatter(),...scoreRuns(runnersScored.length)});
     } else await up({plays:[...plays,{pitcherId:pitcher?.id,pitcherName:pitcher?.name,isPitch:true,timestamp:Date.now(),inning:game.inning,half:game.half}],count:{...count,balls:b}});
   };
 
@@ -278,30 +191,50 @@ export function LiveGame({ data, id, nav }: any) {
     } else await up({plays:[...plays,pp],count:{...count,strikes:s}});
   };
 
-  const registerOut = async (type:string) => {
-    if(noPitcher){setShowPitcher(true);return;}
-    const numOuts=type==="DP"?2:1; let nb=[...bases];
-    if(type==="DP"){if(nb[0])nb[0]=null;else if(nb[1])nb[1]=null;else if(nb[2])nb[2]=null;}
-    const play=makePlay(type); const np=[...plays,play]; const u:any={plays:np,count:resetCount(),[batIdxKey]:nextBatter(),bases:nb};
-    const o=(game.outs||0)+numOuts; if(o>=3){changeHalf(u);if(isGameOver(np)){await finishGame(np);return;}} else u.outs=o; await up(u);
+  // ── TRAZADOR DE JUGADAS DEFENSIVAS ──
+  const toggleRouteNode = (num:number) => {
+    if(fieldRoute.includes(num)) setFieldRoute(fieldRoute.filter(x=>x!==num));
+    else setFieldRoute([...fieldRoute, num]);
   };
 
-  const registerError = async (pos:string) => {
-    const{newBases,runnersScored}=advanceBases(bases,"E", batterObj); setShowError(false);
-    const defPlayer = pitchLineup.find((p:any) => p.fieldPos === pos); 
-    setShowConfirm({type:"E",suggestedRuns:runnersScored.length,runs:runnersScored.length,newBases,runnersScored,ca:0,extra:{errorPosition:pos, errorPlayerId:defPlayer?.id, errorPlayerName:defPlayer?.name, isEarned:false}});
+  const executeFielding = async (type: "OUT" | "FLY" | "DP" | "FC" | "ERROR") => {
+    if(type === "FC") { setFcRunnerSelect(true); return; } // Abre selector de corredor
+    if(type === "ERROR") { 
+      const errPos = fieldRoute[fieldRoute.length-1] || 6;
+      const defPlayer = pitchLineup.find((p:any) => p.fieldPos.includes(`(${errPos})`));
+      const{newBases,runnersScored}=advanceBases(bases,"E", batterObj); setShowBatazo(false);
+      setShowConfirm({type:"E",suggestedRuns:runnersScored.length,runs:runnersScored.length,newBases,runnersScored,ca:0,extra:{route:fieldRoute, errorPosition:errPos, errorPlayerId:defPlayer?.id, errorPlayerName:defPlayer?.name, isEarned:false}});
+      return; 
+    }
+
+    const numOuts = type==="DP"?2:1; 
+    let nb=[...bases]; if(type==="DP"){if(nb[0])nb[0]=null;else if(nb[1])nb[1]=null;else if(nb[2])nb[2]=null;}
+    
+    const play = makePlay(type==="OUT"?"GROUND":type, {route: fieldRoute}); 
+    const np=[...plays,play]; const u:any={plays:np,count:resetCount(),[batIdxKey]:nextBatter(),bases:nb};
+    const o=(game.outs||0)+numOuts; if(o>=3){changeHalf(u);if(isGameOver(np)){await finishGame(np);return;}} else u.outs=o; 
+    await up(u); setShowBatazo(false); setFieldRoute([]);
   };
 
-  const executeRunnerAction = async (type:"SB"|"CS", baseIdx:number, runner:any) => {
+  const executeFC = async (baseIdxOut: number) => {
+    const nb = [...bases]; nb[baseIdxOut] = null; nb[0] = batterObj; // Saca corredor, bateador a 1ra
+    const play = makePlay("FC", {route: fieldRoute});
+    const np=[...plays,play]; const u:any={plays:np,count:resetCount(),[batIdxKey]:nextBatter(),bases:nb};
+    const o=(game.outs||0)+1; if(o>=3){changeHalf(u);if(isGameOver(np)){await finishGame(np);return;}} else u.outs=o; 
+    await up(u); setShowBatazo(false); setFieldRoute([]); setFcRunnerSelect(false);
+  };
+
+  const executeRunnerAction = async (type:"SB"|"CS"|"PK", baseIdx:number, runner:any) => {
     const nb=[...bases]; nb[baseIdx]=null;
     if(type==="SB"){ 
       let runs=0; let scored = []; 
       if(baseIdx===2){ runs=1; scored.push(runner); } else { nb[baseIdx+1]=runner; }
-      
       const runPlays = scored.map((r:any) => ({...makePlay("RUN", {ca:1, isPitch:false}), playerId: r.id, playerName: r.name}));
       await up({plays:[...plays,{...makePlay("SB",{ci:0,isPitch:false}),playerId:runner.id,playerName:runner.name}, ...runPlays],bases:nb,...(runs>0?scoreRuns(runs):{})});
     } else { 
-      const play={...makePlay("CS",{isPitch:false}),playerId:runner.id,playerName:runner.name};
+      // Pickoff da A al pitcher (1) y PO a la base. CS da A al catcher (2).
+      const route = type==="PK" ? [1, baseIdx===0?3:baseIdx===1?4:5] : [2, baseIdx===0?3:baseIdx===1?4:5];
+      const play={...makePlay(type,{isPitch:false, route}),playerId:runner.id,playerName:runner.name};
       const np=[...plays,play]; const u:any={plays:np,bases:nb}; const o=(game.outs||0)+1;
       if(o>=3){changeHalf(u);if(isGameOver(np)){await finishGame(np);return;}} else u.outs=o; await up(u);
     }
@@ -310,14 +243,15 @@ export function LiveGame({ data, id, nav }: any) {
 
   const registerComplex = async (type:string) => {
     if(noPitcher&&type!=="SB"&&type!=="CS"){setShowPitcher(true);return;}
-    if(type==="HBP"){ const{newBases,runnersScored}=walkBases(bases, batterObj);
+    if(type==="IBB"){ addBall(true); }
+    else if(type==="HBP"){ const{newBases,runnersScored}=walkBases(bases, batterObj);
       const runPlays = runnersScored.map((r:any) => ({...makePlay("RUN", {ca:1, isPitch:false}), playerId: r.id, playerName: r.name}));
       await up({plays:[...plays,makePlay("HBP",{ci:runnersScored.length}), ...runPlays],bases:newBases,count:resetCount(),[batIdxKey]:nextBatter(),...scoreRuns(runnersScored.length)});
     } else if(type==="SAC"){ const{newBases,runnersScored}=advanceAllRunners(bases);
       const runPlays = runnersScored.map((r:any) => ({...makePlay("RUN", {ca:1, isPitch:false}), playerId: r.id, playerName: r.name}));
       const np=[...plays,makePlay("SAC",{ci:runnersScored.length,isSacrifice:true}), ...runPlays]; const u:any={plays:np,bases:newBases,count:resetCount(),[batIdxKey]:nextBatter(),...scoreRuns(runnersScored.length)};
       const o=(game.outs||0)+1; if(o>=3)changeHalf(u); else u.outs=o; await up(u);
-    } else if(type==="SB"||type==="CS"){ 
+    } else if(type==="SB"||type==="CS"||type==="PK"){ 
       const rOn=bases.map((b:any,i:number)=>({idx:i,runner:b})).filter((r:any)=>r.runner !== null);
       if(rOn.length===0){setShowComplex(false);return;}
       if(rOn.length===1) executeRunnerAction(type,rOn[0].idx, rOn[0].runner);
@@ -326,18 +260,8 @@ export function LiveGame({ data, id, nav }: any) {
       const runPlays = runnersScored.map((r:any) => ({...makePlay("RUN", {ca:1, isPitch:false}), playerId: r.id, playerName: r.name}));
       const isEarned = type !== "PB";
       await up({plays:[...plays,{...makePlay(type,{ci:0,isEarned,isPitch:false}),playerId:null,playerName:type==="PB"?"Receptor":pitcher?.name||"Pitcher"}, ...runPlays],bases:newBases,...scoreRuns(runnersScored.length)});
-    } else if(type==="DP"){ await registerOut("DP"); }
+    }
     setShowComplex(false);
-  };
-
-  const doSub = async (side:"away"|"home",idx:number,np:any) => {
-    const key=side==="away"?"awayLineup":"homeLineup"; const lu=[...(game[key]||[])];
-    lu[idx]={id:np.id,name:np.name,number:np.number,position:np.position,fieldPos:lu[idx]?.fieldPos||""};
-    await up({[key]:lu}); setShowSub(null);
-  };
-  const getAvailSubs = (side:"away"|"home") => {
-    const tid=side==="away"?game.awayTeamId:game.homeTeamId; const lu=side==="away"?(game.awayLineup||[]):(game.homeLineup||[]);
-    const ids=new Set(lu.map((p:any)=>p.id)); return data.players.filter((p:any)=>p.teamId===tid&&!ids.has(p.id));
   };
 
   const undoLastPlay = async () => {
@@ -351,49 +275,82 @@ export function LiveGame({ data, id, nav }: any) {
     } await up(u);
   };
 
+  // ── CIERRE DE JUEGO MÁGICO (Inyecta stats defensivos y ofensivos) ──
   const finishGame = async (gp:any[]) => {
     await up({status:"final"});
     if(aw){const u=game.awayScore>game.homeScore?{wins:(aw.wins||0)+1}:game.awayScore<game.homeScore?{losses:(aw.losses||0)+1}:{draws:(aw.draws||0)+1};await F.set("teams",aw.id,u);}
     if(hm){const u=game.homeScore>game.awayScore?{wins:(hm.wins||0)+1}:game.homeScore<game.awayScore?{losses:(hm.losses||0)+1}:{draws:(hm.draws||0)+1};await F.set("teams",hm.id,u);}
     
-    const ba:Record<string,any>={};
+    const ba:Record<string,any>={}; // Batting
+    const pa:Record<string,any>={}; // Pitching
+    const fa:Record<string,any>={}; // Fielding (NUEVO)
+
     gp.forEach((p:any)=>{
-      if (p.result === "E" && p.errorPlayerId) {
-        if(!ba[p.errorPlayerId]) ba[p.errorPlayerId]={VB:0,H:0,"2B":0,"3B":0,HR:0,CI:0,CA:0,BB:0,K:0,BR:0,E:0};
-        ba[p.errorPlayerId].E = (ba[p.errorPlayerId].E||0) + 1; 
+      // 1. FIELDING (Defensa)
+      if(p.defenseMap && p.route && p.route.length > 0) {
+        if (p.result === "E") {
+          const errId = p.errorPlayerId || p.defenseMap[p.route[p.route.length - 1]];
+          if (errId) { if(!fa[errId]) fa[errId]={PO:0,A:0,E:0,DP:0}; fa[errId].E++; }
+        } else {
+          const poId = p.defenseMap[p.route[p.route.length - 1]];
+          if (poId) { if(!fa[poId]) fa[poId]={PO:0,A:0,E:0,DP:0}; fa[poId].PO++; }
+          for (let i = 0; i < p.route.length - 1; i++) {
+            const aId = p.defenseMap[p.route[i]];
+            if (aId) { if(!fa[aId]) fa[aId]={PO:0,A:0,E:0,DP:0}; fa[aId].A++; }
+          }
+          if (p.result === "DP") {
+             p.route.forEach((pos:number) => { const dpId = p.defenseMap[pos]; if (dpId) { if(!fa[dpId]) fa[dpId]={PO:0,A:0,E:0,DP:0}; fa[dpId].DP++; }});
+          }
+        }
+      } else if (p.result === "E" && p.errorPlayerId) { // Fallback de error
+        if(!fa[p.errorPlayerId]) fa[p.errorPlayerId]={PO:0,A:0,E:0,DP:0}; fa[p.errorPlayerId].E++;
       }
 
-      if(!p.playerId)return;
-      if(!ba[p.playerId])ba[p.playerId]={VB:0,H:0,"2B":0,"3B":0,HR:0,CI:0,CA:0,BB:0,K:0,BR:0,E:0};
-      const s=ba[p.playerId];
-      if(["1B","2B","3B","HR"].includes(p.result)){s.VB++;s.H++;if(p.result==="2B")s["2B"]++;if(p.result==="3B")s["3B"]++;if(p.result==="HR")s.HR++;}
-      else if(["BB","HBP"].includes(p.result))s.BB++; 
-      else if(p.result==="SAC"){} 
-      else if(["OUT","FLY","GROUND","K","DP","E"].includes(p.result)){s.VB++;if(p.result==="K")s.K++;}
-      else if(p.result==="RUN"){} 
+      // 2. BATTING
+      if(p.playerId){
+        if(!ba[p.playerId])ba[p.playerId]={VB:0,H:0,"2B":0,"3B":0,HR:0,CI:0,CA:0,BB:0,K:0,BR:0,E:0}; const s=ba[p.playerId];
+        if(["1B","2B","3B","HR"].includes(p.result)){s.VB++;s.H++;if(p.result==="2B")s["2B"]++;if(p.result==="3B")s["3B"]++;if(p.result==="HR")s.HR++;}
+        else if(["BB","IBB","HBP"].includes(p.result))s.BB++; 
+        else if(["OUT","FLY","GROUND","K","DP","E","FC"].includes(p.result)){s.VB++;if(p.result==="K")s.K++;}
+        s.CI+=(p.ci||0);s.CA+=(p.ca||0);if(p.result==="SB")s.BR++;
+      }
       
-      s.CI+=(p.ci||0);s.CA+=(p.ca||0);if(p.result==="SB")s.BR++;
+      // 3. PITCHING
+      if(p.pitcherId && p.result){
+        if(!pa[p.pitcherId])pa[p.pitcherId]={H:0,BB:0,K:0,CL:0,outs:0,ts:""}; const s=pa[p.pitcherId];
+        if(["1B","2B","3B","HR","E"].includes(p.result))s.H++; if(["BB","IBB","HBP"].includes(p.result))s.BB++; if(p.result==="K")s.K++;
+        if(["OUT","FLY","GROUND","K","SAC","FC"].includes(p.result))s.outs++; if(p.result==="DP")s.outs+=2; if(p.isEarned!==false)s.CL+=(p.ci||0);
+        if(!s.ts)s.ts=(game.homeLineup||[]).find((x:any)=>x.id===p.pitcherId)?"home":"away";
+      }
     });
 
-    for(const[pid,gs]of Object.entries(ba)as any){const pl=data.players.find((p:any)=>p.id===pid);if(!pl)continue;
-      const b=pl.batting||{JJ:0,VB:0,H:0,"2B":0,"3B":0,HR:0,CI:0,CA:0,BB:0,K:0,BR:0,E:0};
-      await F.set("players",pid,{batting:{JJ:(b.JJ||0)+1,VB:(b.VB||0)+gs.VB,H:(b.H||0)+gs.H,"2B":(b["2B"]||0)+gs["2B"],"3B":(b["3B"]||0)+gs["3B"],HR:(b.HR||0)+gs.HR,CI:(b.CI||0)+gs.CI,CA:(b.CA||0)+gs.CA,BB:(b.BB||0)+gs.BB,K:(b.K||0)+gs.K,BR:(b.BR||0)+gs.BR,E:(b.E||0)+(gs.E||0)}});
+    // Guardar Batting & Fielding
+    const allPids = new Set([...Object.keys(ba), ...Object.keys(fa)]);
+    for(const pid of allPids) {
+      const pl = data.players.find((p:any)=>p.id===pid); if(!pl) continue;
+      const b=pl.batting||{JJ:0,VB:0,H:0,"2B":0,"3B":0,HR:0,CI:0,CA:0,BB:0,K:0,BR:0}; const gs = ba[pid]||{};
+      const f=pl.fielding||{JJ:0,PO:0,A:0,E:0,DP:0,TC:0}; const fs = fa[pid]||{};
+      const tc = (fs.PO||0) + (fs.A||0) + (fs.E||0);
+      
+      const payload:any = { 
+        batting: gs.VB !== undefined ? {JJ:(b.JJ||0)+1,VB:(b.VB||0)+gs.VB,H:(b.H||0)+gs.H,"2B":(b["2B"]||0)+gs["2B"],"3B":(b["3B"]||0)+gs["3B"],HR:(b.HR||0)+gs.HR,CI:(b.CI||0)+gs.CI,CA:(b.CA||0)+gs.CA,BB:(b.BB||0)+gs.BB,K:(b.K||0)+gs.K,BR:(b.BR||0)+gs.BR} : b,
+        fielding: fs.PO !== undefined ? {JJ:(f.JJ||0)+1, PO:(f.PO||0)+fs.PO, A:(f.A||0)+fs.A, E:(f.E||0)+fs.E, DP:(f.DP||0)+fs.DP, TC:(f.TC||0)+tc} : f
+      };
+      await F.set("players",pid, payload);
     }
 
-    const pa:Record<string,any>={};
-    gp.forEach((p:any)=>{if(!p.pitcherId||!p.result)return;if(!pa[p.pitcherId])pa[p.pitcherId]={H:0,BB:0,K:0,CL:0,outs:0,ts:""};const s=pa[p.pitcherId];
-      if(["1B","2B","3B","HR","E"].includes(p.result))s.H++;if(["BB","HBP"].includes(p.result))s.BB++;if(p.result==="K")s.K++;
-      if(["OUT","FLY","GROUND","K","SAC"].includes(p.result))s.outs++;if(p.result==="DP")s.outs+=2;if(p.isEarned!==false)s.CL+=(p.ci||0);
-      if(!s.ts){s.ts=(game.homeLineup||[]).find((x:any)=>x.id===p.pitcherId)?"home":"away";}});
+    // Guardar Pitching (Ganador, Perdedor)
     const ws=game.awayScore>game.homeScore?"away":game.homeScore>game.awayScore?"home":null;
     const wps=ws?Object.entries(pa).filter(([_,v]:any)=>v.ts===ws).sort((a:any,b:any)=>b[1].outs-a[1].outs):[];
     const lps=ws?Object.entries(pa).filter(([_,v]:any)=>v.ts!==ws).sort((a:any,b:any)=>b[1].outs-a[1].outs):[];
-    const wpId=wps[0]?.[0]||null;const lpId=lps[0]?.[0]||null;
+    const wpId=wps[0]?.[0]||null; const lpId=lps[0]?.[0]||null;
+    
     for(const[pid,gs]of Object.entries(pa)as any){const pl=data.players.find((p:any)=>p.id===pid);if(!pl)continue;
       const pt=pl.pitching||{JJ:0,IL:0,H:0,CL:0,BB:0,K:0,G:0,P:0,JC:0};const il=Math.floor(gs.outs/3)+(gs.outs%3)/10;
       const tto=Object.entries(pa).filter(([_,v]:any)=>v.ts===gs.ts).reduce((s:number,[_,v]:any)=>s+v.outs,0);
       const isJC=gs.outs===tto&&gs.outs>=(game.totalInnings||9)*3/2;
-      await F.set("players",pid,{pitching:{JJ:(pt.JJ||0)+1,IL:parseFloat(((pt.IL||0)+il).toFixed(1)),H:(pt.H||0)+gs.H,CL:(pt.CL||0)+gs.CL,BB:(pt.BB||0)+gs.BB,K:(pt.K||0)+gs.K,G:(pt.G||0)+(pid===wpId?1:0),P:(pt.P||0)+(pid===lpId?1:0),JC:(pt.JC||0)+(isJC?1:0)}});}
+      await F.set("players",pid,{pitching:{JJ:(pt.JJ||0)+1,IL:parseFloat(((pt.IL||0)+il).toFixed(1)),H:(pt.H||0)+gs.H,CL:(pt.CL||0)+gs.CL,BB:(pt.BB||0)+gs.BB,K:(pt.K||0)+gs.K,G:(pt.G||0)+(pid===wpId?1:0),P:(pt.P||0)+(pid===lpId?1:0),JC:(pt.JC||0)+(isJC?1:0)}});
+    }
     nav("home");
   };
 
@@ -409,7 +366,9 @@ export function LiveGame({ data, id, nav }: any) {
       
   return (
     <div style={{background:K.bg,color:K.text,fontFamily:"'Outfit',system-ui,sans-serif",minHeight:"100vh",display:"flex",flexDirection:"column"}}>
-      <style>{`.sg{display:grid;grid-template-columns:200px 1fr 240px;grid-template-rows:auto 1fr auto;height:100vh;gap:0}@media(max-width:800px){.sg{grid-template-columns:1fr;grid-template-rows:auto auto auto auto auto}}.sx::-webkit-scrollbar{display:none}.sx{-ms-overflow-style:none;scrollbar-width:none}`}</style>
+      <style>{`.sg{display:grid;grid-template-columns:200px 1fr 240px;grid-template-rows:auto 1fr auto;height:100vh;gap:0}@media(max-width:800px){.sg{grid-template-columns:1fr;grid-template-rows:auto auto auto auto auto}}.sx::-webkit-scrollbar{display:none}.sx{-ms-overflow-style:none;scrollbar-width:none}
+      .node-btn { width:24px; height:24px; border-radius:12px; font-size:10px; font-weight:900; display:flex; align-items:center; justify-content:center; cursor:pointer; position:absolute; transform:translate(-50%,-50%); z-index:10; transition:all 0.2s; }
+      `}</style>
       <div className="sg">
         {/* TOP BAR */}
         <div style={{gridColumn:"1/-1",background:"#0a0e1a",borderBottom:`2px solid ${K.border}`,padding:"8px 12px",display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:8}}>
@@ -449,11 +408,11 @@ export function LiveGame({ data, id, nav }: any) {
             :<button onClick={()=>setShowPitcher(true)} style={{...S.btn("danger"),padding:"6px 10px",fontSize:10,width:"100%"}}>⚠️ Asignar</button>}
           </div></div>
 
-        {/* CENTER DIAMOND INTELIGENTE */}
+        {/* CENTER DIAMOND */}
         <div style={{background:"#080c16",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:12}}>
           {noPitcher&&<div style={{padding:"8px 14px",borderRadius:10,background:`${K.red}22`,border:`1px solid ${K.red}`,marginBottom:12,textAlign:"center"}}><span style={{fontSize:11,fontWeight:700,color:K.red}}>⚠️ Asigna pitcher</span></div>}
           
-          <div style={{textAlign:"center",marginBottom:45}}> {/* ── MARGEN AUMENTADO PARA ALEJAR EL DUELO ── */}
+          <div style={{textAlign:"center",marginBottom:45}}> 
             <div style={{fontSize:10,color:K.muted,fontWeight:700,marginBottom:4}}>DUELO</div>
             <div style={{display:"flex",alignItems:"center",gap:10,justifyContent:"center"}}><span style={{fontWeight:900,fontSize:13,color:noPitcher?K.red:K.blue}}>{pitcher?.name||"⚠️"}</span><span style={{fontSize:10,color:K.muted}}>🆚</span><span style={{fontWeight:900,fontSize:13,color:K.accent}}>{currentBatter?.name||"?"}</span></div>
           </div>
@@ -461,34 +420,18 @@ export function LiveGame({ data, id, nav }: any) {
           <div style={{position:"relative",width:180,height:180, marginTop:15, marginBottom:20}}>
             <svg width={180} height={180} viewBox="0 0 180 180"><polygon points="90,15 165,90 90,165 15,90" fill="none" stroke={K.border} strokeWidth="2"/><line x1="90" y1="165" x2="165" y2="90" stroke={K.border} strokeWidth="1" opacity=".3"/><line x1="90" y1="165" x2="15" y2="90" stroke={K.border} strokeWidth="1" opacity=".3"/></svg>
             
-            {/* ── NOMBRES DEFENSIVOS (RADAR) REDISTRIBUIDOS ── */}
-            {[
-              {p:"C(2)", x:90, y:185}, 
-              {p:"P(1)", x:90, y:105}, 
-              {p:"1B(3)", x:180, y:70},
-              {p:"2B(4)", x:135, y:-5}, 
-              {p:"3B(5)", x:0, y:70}, 
-              {p:"SS(6)", x:45, y:-5},
-              {p:"LF(7)", x:-15, y:-35}, 
-              {p:"CF(8)", x:90, y:-50}, 
-              {p:"RF(9)", x:195, y:-35}
-            ].map(d => {
-              const name = getDefName(d.p);
-              if (!name) return null;
+            {/* DEFENSIVOS */}
+            {[ {p:"C(2)",...POS_COORDS[2]}, {p:"P(1)",...POS_COORDS[1]}, {p:"1B(3)",...POS_COORDS[3]}, {p:"2B(4)",...POS_COORDS[4]}, {p:"3B(5)",...POS_COORDS[5]}, {p:"SS(6)",...POS_COORDS[6]}, {p:"LF(7)",...POS_COORDS[7]}, {p:"CF(8)",...POS_COORDS[8]}, {p:"RF(9)",...POS_COORDS[9]} ].map(d => {
+              const name = getDefName(d.p); if (!name) return null;
               return <div key={d.p} style={{position:"absolute", left:d.x, top:d.y, transform:"translate(-50%,-50%)", fontSize:8, fontWeight:800, color:K.blue, background:"rgba(13, 31, 74, 0.85)", border:`1px solid ${K.blue}55`, padding:"3px 5px", borderRadius:6, zIndex:5, whiteSpace:"nowrap", textShadow:"0 1px 2px #000"}}>{d.p.split("(")[0]} {name}</div>
             })}
 
             <div style={{position:"absolute",bottom:4,left:"50%",transform:"translateX(-50%) rotate(45deg)",width:18,height:18,background:K.muted,borderRadius:2}}/>
-            
-            {/* BOTONES INTERACTIVOS DE BASES */}
             {[{idx:0,s:{right:4,top:"50%",transform:"translateY(-50%) rotate(45deg)"}},{idx:1,s:{left:"50%",top:2,transform:"translateX(-50%) rotate(45deg)"}},{idx:2,s:{left:4,top:"50%",transform:"translateY(-50%) rotate(45deg)"}}].map(b=>(
               <div key={b.idx} style={{position:"absolute",...b.s}}>
                 <div onClick={async()=>{const bs=[...bases];bs[b.idx]=bs[b.idx]?null:{id:"ghost",name:"Corredor"};await up({bases:bs});}}
-                     style={{width:22,height:22,borderRadius:3,cursor:"pointer",background:bases[b.idx]?K.yellow:K.border,border:`2px solid ${bases[b.idx]?K.yellow:K.muted}`,boxShadow:bases[b.idx]?`0 0 12px ${K.yellow}66`:"none",transition:"all .2s"}}/>
-              </div>
-            ))}
+                     style={{width:22,height:22,borderRadius:3,cursor:"pointer",background:bases[b.idx]?K.yellow:K.border,border:`2px solid ${bases[b.idx]?K.yellow:K.muted}`,boxShadow:bases[b.idx]?`0 0 12px ${K.yellow}66`:"none",transition:"all .2s"}}/></div>))}
             
-            {/* ── ETIQUETAS DE CORREDORES DESPLAZADAS PARA NO CHOCAR ── */}
             {bases[0] && <div style={{position:"absolute", right: -40, top: "65%", transform:"translateY(-50%)", fontSize:9, fontWeight:900, color:"#000", background:K.yellow, padding:"2px 6px", borderRadius:4, zIndex:10, boxShadow:`0 2px 5px ${K.yellow}55`}}>{bases[0].name.split(" ")[0]}</div>}
             {bases[1] && <div style={{position:"absolute", left: "50%", top: -25, transform:"translateX(-50%)", fontSize:9, fontWeight:900, color:"#000", background:K.yellow, padding:"2px 6px", borderRadius:4, zIndex:10, boxShadow:`0 2px 5px ${K.yellow}55`}}>{bases[1].name.split(" ")[0]}</div>}
             {bases[2] && <div style={{position:"absolute", left: -40, top: "65%", transform:"translateY(-50%)", fontSize:9, fontWeight:900, color:"#000", background:K.yellow, padding:"2px 6px", borderRadius:4, zIndex:10, boxShadow:`0 2px 5px ${K.yellow}55`}}>{bases[2].name.split(" ")[0]}</div>}
@@ -499,7 +442,7 @@ export function LiveGame({ data, id, nav }: any) {
         <div style={{background:"#0d1220",borderLeft:`1px solid ${K.border}`,overflow:"auto",padding:8,display:"flex",flexDirection:"column",gap:8}}>
           <div><div style={{fontSize:9,fontWeight:900,color:K.muted,marginBottom:4,paddingLeft:4}}>PITCHEOS</div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:5}}>
-              <Btn label="BOLA" icon="🟢" color={K.green} onClick={addBall} disabled={noPitcher}/>
+              <Btn label="BOLA" icon="🟢" color={K.green} onClick={()=>addBall(false)} disabled={noPitcher}/>
               <Btn label="STRIKE" icon="🔴" color={K.red} onClick={()=>addStrike("called")} disabled={noPitcher}/>
               <Btn label="SWING" icon="💨" color="#f97316" onClick={()=>addStrike("swinging")} disabled={noPitcher}/>
               <Btn label="FOUL" icon="📐" color={K.yellow} onClick={()=>addStrike("foul")} disabled={noPitcher}/></div></div>
@@ -509,14 +452,14 @@ export function LiveGame({ data, id, nav }: any) {
               <Btn label="2B" icon="✌️" color="#14b8a6" onClick={()=>prepareHit("2B")} size="lg" disabled={noPitcher}/>
               <Btn label="3B" icon="🔱" color="#6366f1" onClick={()=>prepareHit("3B")} size="lg" disabled={noPitcher}/>
               <Btn label="HR" icon="💥" color={K.red} bg={`${K.red}22`} onClick={()=>prepareHit("HR")} size="lg" disabled={noPitcher}/></div></div>
-          <div><div style={{fontSize:9,fontWeight:900,color:K.muted,marginBottom:4,paddingLeft:4}}>OUTS</div>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:5}}>
-              <Btn label="K" icon="💨" color="#a78bfa" onClick={()=>registerOut("K")} disabled={noPitcher}/>
-              <Btn label="FLY" icon="🔼" color="#64748b" onClick={()=>registerOut("FLY")} disabled={noPitcher}/>
-              <Btn label="GROUND" icon="⬇️" color="#64748b" onClick={()=>registerOut("GROUND")} disabled={noPitcher}/></div></div>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:5}}>
-            <button onClick={()=>{if(noPitcher){setShowPitcher(true);return;}setShowError(true);}} style={{padding:"8px 6px",borderRadius:10,border:"2px solid #f9731644",background:"#f9731615",color:"#f97316",fontWeight:900,fontSize:11,cursor:"pointer",textAlign:"center",minHeight:36}}>🫣 ERROR</button>
-            <button onClick={()=>{if(noPitcher){setShowPitcher(true);return;}setShowComplex(true);}} style={{padding:"8px 6px",borderRadius:10,border:`2px solid ${K.purple}44`,background:`${K.purple}15`,color:K.purple,fontWeight:900,fontSize:11,cursor:"pointer",textAlign:"center",minHeight:36}}>⚙️ COMPLEJA</button></div>
+          <div><div style={{fontSize:9,fontWeight:900,color:K.muted,marginBottom:4,paddingLeft:4}}>OUTS DE BATAZO</div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:5}}>
+              <Btn label="K (PONCHE)" icon="💨" color="#a78bfa" onClick={()=>registerOut("K")} disabled={noPitcher} size="lg"/>
+              {/* ── BOTON MAESTRO DEL TRAZADOR ── */}
+              <Btn label="EN JUEGO / BATAZO" icon="⚾" color={K.blue} bg={`${K.blue}22`} onClick={()=>{if(!noPitcher){setFieldRoute([]);setShowBatazo(true);}}} disabled={noPitcher} size="lg"/>
+              </div></div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr",gap:5}}>
+            <button onClick={()=>{if(noPitcher){setShowPitcher(true);return;}setShowComplex(true);}} style={{padding:"8px 6px",borderRadius:10,border:`2px solid ${K.purple}44`,background:`${K.purple}15`,color:K.purple,fontWeight:900,fontSize:11,cursor:"pointer",textAlign:"center",minHeight:36}}>⚙️ MENÚ JUGADA COMPLEJA (Robos, Balks...)</button></div>
           <div><div style={{fontSize:9,fontWeight:900,color:K.muted,marginBottom:4,paddingLeft:4}}>+ CARRERAS EQUIPO / JUGADOR</div>
             <div style={{display:"flex",gap:4}}>
               <button onClick={()=>setShowAssignRun(true)} style={{flex:1,padding:"8px 4px",borderRadius:8,border:`1px solid ${K.accent}`,background:`${K.accent}22`,color:K.accent,fontWeight:900,fontSize:11,cursor:"pointer"}} title="Anotar a un jugador">🏃 +CA</button>
@@ -526,16 +469,79 @@ export function LiveGame({ data, id, nav }: any) {
         <div style={{gridColumn:"1/-1",background:"#0a0e1a",borderTop:`2px solid ${K.border}`,padding:"6px 12px",display:"flex",alignItems:"center",gap:10}}>
           <button onClick={undoLastPlay} style={{padding:"8px 14px",borderRadius:10,background:K.red+"22",border:`2px solid ${K.red}`,color:K.red,fontWeight:900,fontSize:11,cursor:"pointer",flexShrink:0}}>↩️ DESHACER</button>
           <div style={{flex:1,display:"flex",gap:6,overflow:"auto"}} className="sx">
-            {rp.map((p:any,i:number)=>{const ic:any={"1B":"🏏","2B":"✌️","3B":"🔱","HR":"💥","BB":"👁","K":"💨","OUT":"❌","FLY":"🔼","GROUND":"⬇️","DP":"✖️","SAC":"🎯","HBP":"😤","E":"🫣","WP":"🤷","SB":"🏃","CS":"🚔","PB":"🧤","BALK":"🚫","RUN":"🏃‍♂️"};
+            {rp.map((p:any,i:number)=>{const ic:any={"1B":"🏏","2B":"✌️","3B":"🔱","HR":"💥","BB":"👁","IBB":"🤫","K":"💨","OUT":"❌","GROUND":"⬇️","FLY":"🔼","DP":"✖️","SAC":"🎯","HBP":"😤","E":"🫣","WP":"🤷","SB":"🏃","CS":"🚔","PK":"🎯","PB":"🧤","BALK":"🚫","RUN":"🏃‍♂️","FC":"⚖️"};
+              const rutText = p.route?.length > 0 ? `(${p.route.join("-")})` : "";
               return<div key={i} style={{flexShrink:0,padding:"4px 10px",borderRadius:8,background:K.input,border:`1px solid ${K.border}`,display:"flex",alignItems:"center",gap:4,fontSize:10}}>
                 <span>{ic[p.result]||"⚾"}</span><span style={{fontWeight:700}}>{p.playerName}</span>
-                <span style={{color:K.muted}}>{p.result} {p.errorPosition?`(${p.errorPosition})`:""}</span>
+                <span style={{color:K.muted}}>{p.result} {rutText} {p.errorPosition?`(${p.errorPosition})`:""}</span>
                 {p.ci>0&&<span style={{color:K.accent,fontWeight:700}}>+{p.ci}CI</span>}
                 {p.isEarned===false&&<span style={{color:K.yellow,fontSize:8}}>UER</span>}</div>})}</div>
           <button onClick={()=>setShowTraditional(!showTraditional)} style={{padding:"8px 14px",borderRadius:10,background:K.border,border:"none",color:K.dim,fontWeight:700,fontSize:10,cursor:"pointer",flexShrink:0}}>📋 Hoja</button></div>
       </div>
 
-      {/* MODALS REESCRITOS PARA SOPORTAR OBJETOS EN BASES */}
+      {/* ── MODAL DEL TRAZADOR VISUAL DE OUTS ── */}
+      {showBatazo && <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.85)",zIndex:100,display:"flex",alignItems:"center",justifyContent:"center"}}>
+        <div style={{...S.card, padding:20, maxWidth:380, width:"90%", textAlign:"center", position:"relative"}}>
+          <button onClick={()=>setShowBatazo(false)} style={{position:"absolute",top:10,right:10,background:"none",border:"none",color:K.muted,fontSize:20,cursor:"pointer"}}>✕</button>
+          
+          {!fcRunnerSelect ? (
+            <>
+              <h3 style={{fontWeight:900,fontSize:18,marginBottom:4}}>Trazar Jugada (Ruta)</h3>
+              <p style={{fontSize:12,color:K.muted,marginBottom:20}}>Toca en orden a los jugadores que participaron en el fildeo/tiro.</p>
+              
+              <div style={{position:"relative", width:240, height:240, margin:"0 auto 20px"}}>
+                <svg width={240} height={240} style={{position:"absolute",inset:0}}>
+                  <polygon points="120,40 200,120 120,200 40,120" fill="none" stroke={K.border} strokeWidth="2"/>
+                  {/* Dibuja líneas entre la ruta seleccionada */}
+                  {fieldRoute.length > 1 && fieldRoute.map((node, i) => {
+                    if(i===0) return null;
+                    const prev = POS_COORDS[fieldRoute[i-1]]; const curr = POS_COORDS[node];
+                    return <line key={i} x1={prev.x+20} y1={prev.y+40} x2={curr.x+20} y2={curr.y+40} stroke={K.accent} strokeWidth="3" strokeDasharray="4"/>
+                  })}
+                </svg>
+                
+                {[1,2,3,4,5,6,7,8,9].map(num => {
+                  const isActive = fieldRoute.includes(num);
+                  const stepNum = fieldRoute.indexOf(num) + 1;
+                  return (
+                    <div key={num} onClick={()=>toggleRouteNode(num)} className="node-btn"
+                         style={{left:POS_COORDS[num].x+20, top:POS_COORDS[num].y+40, 
+                                 background: isActive ? K.accent : K.card, 
+                                 border: `2px solid ${isActive?K.accent:K.muted}`, color:isActive?"#000":K.text}}>
+                      {isActive ? stepNum : num}
+                    </div>
+                  )
+                })}
+              </div>
+              
+              <div style={{fontSize:24, fontWeight:900, color:K.accent, letterSpacing:4, minHeight:34, marginBottom:16}}>
+                {fieldRoute.length > 0 ? fieldRoute.join(" - ") : "..."}
+              </div>
+
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+                <button onClick={()=>executeFielding("OUT")} disabled={fieldRoute.length===0} style={{...S.btn("primary"), opacity:fieldRoute.length?1:0.5}}>⬇️ Rodado (Out)</button>
+                <button onClick={()=>executeFielding("FLY")} disabled={fieldRoute.length===0} style={{...S.btn("ghost"), border:`1px solid ${K.border}`, opacity:fieldRoute.length?1:0.5}}>🔼 Elevado (Fly)</button>
+                <button onClick={()=>executeFielding("DP")} disabled={fieldRoute.length<2} style={{...S.btn("danger"), background:`${K.red}22`, opacity:fieldRoute.length>1?1:0.5}}>✖️✖️ Doble Play</button>
+                <button onClick={()=>executeFielding("FC")} disabled={fieldRoute.length===0} style={{...S.btn("ghost"), border:`1px solid ${K.blue}44`, color:K.blue, opacity:fieldRoute.length?1:0.5}}>⚖️ Jugada Selección (FC)</button>
+                <button onClick={()=>executeFielding("ERROR")} disabled={fieldRoute.length===0} style={{gridColumn:"1/-1", padding:12, borderRadius:8, background:"#f9731622", border:"1px solid #f97316", color:"#f97316", fontWeight:900, cursor:"pointer", opacity:fieldRoute.length?1:0.5}}>🫣 ERROR Defensivo</button>
+              </div>
+            </>
+          ) : (
+            <>
+              <h3 style={{fontWeight:900,fontSize:18,marginBottom:4}}>⚖️ Jugada de Selección (FC)</h3>
+              <p style={{fontSize:12,color:K.muted,marginBottom:20}}>El bateador se embasa. ¿Qué corredor fue puesto out?</p>
+              <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                {bases.map((runner:any,i:number)=>{
+                  if(!runner) return null;
+                  return <button key={i} onClick={()=>executeFC(i)} style={{padding:16,borderRadius:10,border:`1px solid ${K.border}`,background:K.input,color:K.text,fontWeight:800,cursor:"pointer"}}>Sacar a {runner.name} (en {["1ra","2da","3ra"][i]})</button>
+                })}
+              </div>
+            </>
+          )}
+        </div>
+      </div>}
+
+      {/* OTROS MODALS (Confirm Hit, Assign Run) */}
       {showConfirm&&<Modal title={`Confirmar ${showConfirm.type}`} onClose={()=>setShowConfirm(null)}>
         <div style={{display:"flex",flexDirection:"column",gap:14}}>
           <div style={{textAlign:"center",padding:10,background:K.input,borderRadius:12}}>
@@ -545,12 +551,7 @@ export function LiveGame({ data, id, nav }: any) {
             <div style={{display:"flex",gap:6,justifyContent:"center"}}>{[0,1,2,3,4].map(n=><button key={n} onClick={()=>setShowConfirm({...showConfirm,runs:n})} style={{width:44,height:44,borderRadius:12,border:`2px solid ${showConfirm.runs===n?K.accent:K.border}`,background:showConfirm.runs===n?`${K.accent}22`:K.input,color:showConfirm.runs===n?K.accent:K.text,fontWeight:900,fontSize:18,cursor:"pointer"}}>{n}</button>)}</div></div>
           <div><label style={S.label}>Bases (toca para ajustar)</label>
             <div style={{display:"flex",gap:12,justifyContent:"center",padding:10}}>{["1ra","2da","3ra"].map((l,i)=><button key={i} onClick={()=>{const nb=[...showConfirm.newBases];nb[i]=nb[i]?null:(bases[i]||{id:"ghost",name:"Corredor"});setShowConfirm({...showConfirm,newBases:nb});}} style={{padding:"10px 18px",borderRadius:10,border:`2px solid ${showConfirm.newBases[i]?K.yellow:K.border}`,background:showConfirm.newBases[i]?K.yellow+"22":"transparent",color:showConfirm.newBases[i]?K.yellow:K.muted,fontWeight:700,fontSize:13,cursor:"pointer"}}>{l} {showConfirm.newBases[i]?"●":"○"}</button>)}</div></div>
-          <button onClick={confirmHit} style={{...S.btn("primary"),width:"100%",padding:14,fontSize:14}}>✅ Confirmar {showConfirm.runs>0?`(+${showConfirm.runs})`:""}
-          </button></div></Modal>}
-
-      {showError&&<Modal title="🫣 Error Defensivo" onClose={()=>setShowError(false)}>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
-          {FIELD_POS.map(pos=><button key={pos} onClick={()=>registerError(pos)} style={{padding:14,borderRadius:12,border:"2px solid #f9731644",background:"#f9731615",color:"#f97316",fontWeight:800,fontSize:12,cursor:"pointer",textAlign:"center"}}>{pos}</button>)}</div></Modal>}
+          <button onClick={confirmHit} style={{...S.btn("primary"),width:"100%",padding:14,fontSize:14}}>✅ Confirmar</button></div></Modal>}
 
       {showAssignRun && <Modal title="¿Quién anotó la carrera?" onClose={()=>setShowAssignRun(false)}>
         <div style={{display:"flex",flexDirection:"column",gap:8}}>
@@ -559,24 +560,17 @@ export function LiveGame({ data, id, nav }: any) {
                 const play = {...makePlay("RUN",{ca:1,isPitch:false}), playerId:p.id, playerName:p.name};
                 await up({plays:[...plays,play], ...(addTeamRun ? scoreRuns(1) : {})});
                 setShowAssignRun(false); setAddTeamRun(false);
-             }} style={{padding:12,borderRadius:10,border:`1px solid ${K.border}`,background:K.input,color:K.text,fontWeight:700,fontSize:14,cursor:"pointer",textAlign:"left"}}>
-               #{p.number} {p.name}
-             </button>
-          ))}
-          <label style={{display:"flex", alignItems:"center", gap:8, marginTop:12}}>
-             <input type="checkbox" checked={addTeamRun} onChange={(e)=>setAddTeamRun(e.target.checked)} />
-             <span style={{fontSize:12, color:K.muted}}>Sumar también al marcador general del equipo</span>
-          </label>
-        </div>
-      </Modal>}
+             }} style={{padding:12,borderRadius:10,border:`1px solid ${K.border}`,background:K.input,color:K.text,fontWeight:700,fontSize:14,cursor:"pointer",textAlign:"left"}}>#{p.number} {p.name}</button>))}
+          <label style={{display:"flex", alignItems:"center", gap:8, marginTop:12}}><input type="checkbox" checked={addTeamRun} onChange={(e)=>setAddTeamRun(e.target.checked)} /><span style={{fontSize:12, color:K.muted}}>Sumar también al marcador general</span></label>
+        </div></Modal>}
 
-      {showRunnerAction&&<Modal title={showRunnerAction.type==="SB"?"🏃 ¿Quién se robó la base?":"🚔 ¿Quién fue atrapado?"} onClose={()=>setShowRunnerAction(null)}>
+      {showRunnerAction&&<Modal title={showRunnerAction.type==="SB"?"🏃 ¿Quién se robó la base?":showRunnerAction.type==="PK"?"🎯 Revirada (Pickoff) a:":"🚔 ¿Quién fue atrapado?"} onClose={()=>setShowRunnerAction(null)}>
         <div style={{display:"flex",flexDirection:"column",gap:8}}>
           {bases.map((runner:any,i:number)=>{if(!runner)return null;const c=[K.accent,"#6366f1",K.yellow];return<button key={i} onClick={()=>executeRunnerAction(showRunnerAction.type!,i, runner)} style={{padding:16,borderRadius:14,border:`2px solid ${c[i]}44`,background:`${c[i]}15`,color:c[i],fontWeight:800,fontSize:14,cursor:"pointer",textAlign:"center"}}>🏃 {runner.name} en {["1ra","2da","3ra"][i]} Base</button>})}</div></Modal>}
 
-      {showComplex&&<Modal title="Jugada Compleja" onClose={()=>setShowComplex(false)}>
+      {showComplex&&<Modal title="Jugadas Especiales y de Corredores" onClose={()=>setShowComplex(false)}>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
-          {[{k:"HBP",l:"Golpeado",i:"😤",c:"#eab308",d:"Fuerza si full"},{k:"SAC",l:"Sacrificio",i:"🎯",c:"#a3a3a3",d:"No cuenta AB"},{k:"DP",l:"Doble Play",i:"✖️✖️",c:"#dc2626",d:"Limpia líder"},{k:"WP",l:"Wild Pitch",i:"🤷",c:"#64748b",d:"ER, sin RBI"},{k:"PB",l:"Passed Ball",i:"🧤",c:"#64748b",d:"UER"},{k:"BALK",l:"Balk",i:"🚫",c:"#f43f5e",d:"ER, sin RBI"},{k:"SB",l:"Base Robada",i:"🏃",c:"#8b5cf6",d:""},{k:"CS",l:"Atrapado",i:"🚔",c:"#dc2626",d:"1 out"}].map(a=>
+          {[{k:"IBB",l:"Boleto Intencional",i:"🤫",c:K.blue,d:"No suma bolas"},{k:"HBP",l:"Golpeado",i:"😤",c:"#eab308",d:"Fuerza si full"},{k:"SAC",l:"Sacrificio",i:"🎯",c:"#a3a3a3",d:"No cuenta AB"},{k:"SB",l:"Base Robada",i:"🏃",c:"#8b5cf6",d:""},{k:"CS",l:"Atrapado",i:"🚔",c:"#dc2626",d:"1 out"},{k:"PK",l:"Pickoff (Revirada)",i:"🎯",c:"#dc2626",d:"1 out, A para Pitcher"},{k:"WP",l:"Wild Pitch",i:"🤷",c:"#64748b",d:"ER, sin RBI"},{k:"PB",l:"Passed Ball",i:"🧤",c:"#64748b",d:"UER"},{k:"BALK",l:"Balk",i:"🚫",c:"#f43f5e",d:"ER, sin RBI"}].map(a=>
             <button key={a.k} onClick={()=>registerComplex(a.k)} style={{padding:12,borderRadius:14,border:`2px solid ${a.c}44`,background:`${a.c}15`,color:a.c,fontWeight:800,fontSize:11,cursor:"pointer",textAlign:"center"}}>
               <div style={{fontSize:20,marginBottom:2}}>{a.i}</div>{a.l}{a.d&&<div style={{fontSize:8,color:K.muted,marginTop:2}}>{a.d}</div>}</button>)}</div></Modal>}
 
@@ -637,33 +631,310 @@ export function LiveGame({ data, id, nav }: any) {
     </div>);
 }
 
-// ═══ WATCH GAME ═══
+// ═══ WATCH GAME (Visualizador en Vivo Estilo ESPN Definitivo) ═══
+
+const POS_NAMES:any = { 1:"lanzador", 2:"receptor", 3:"primera base", 4:"segunda base", 5:"tercera base", 6:"campocorto", 7:"jardín izquierdo", 8:"jardín central", 9:"jardín derecho" };
+
+const getPlayNarrative = (p: any) => {
+  const n = p.playerName || "Bateador";
+  const r = p.route && p.route.length > 0 ? p.route : null;
+  const lastPos = r ? POS_NAMES[r[r.length-1]] : "";
+  const rStr = r ? ` (${r.join("-")})` : "";
+
+  switch(p.result) {
+    case "1B": return `${n} bateó un sencillo${lastPos ? ` al ${lastPos}` : ""}.`;
+    case "2B": return `${n} bateó un doble${lastPos ? ` al ${lastPos}` : ""}.`;
+    case "3B": return `${n} bateó un triple${lastPos ? ` al ${lastPos}` : ""}.`;
+    case "HR": return `${n} bateó un jonrón.`;
+    case "BB": return `${n} se embasó por base por bolas.`;
+    case "IBB": return `${n} recibió boleto intencional.`;
+    case "K": return `${n} se ponchó.`;
+    case "GROUND": return `${n} falló con rodado${lastPos ? ` a ${lastPos}` : ""}${rStr}.`;
+    case "FLY": return `${n} falló con elevado${lastPos ? ` al ${lastPos}` : ""}.`;
+    case "DP": return `${n} bateó para doble play${rStr}.`;
+    case "E": return `${n} se embasó por error del ${POS_NAMES[p.errorPosition] || "fildeador"}.`;
+    case "FC": return `${n} llegó a primera en jugada de selección.`;
+    case "SAC": return `${n} se sacrificó.`;
+    case "HBP": return `${n} fue golpeado por el lanzamiento.`;
+    case "SB": return `${n} se robó la base.`;
+    case "CS": return `${n} fue atrapado robando.`;
+    case "PK": return `${n} fue sorprendido en base (Pickoff).`;
+    case "WP": return `Lanzamiento descontrolado (Wild Pitch).`;
+    case "PB": return `Passed ball del receptor.`;
+    case "BALK": return `Balk del lanzador.`;
+    case "RUN": return `${n} anotó carrera.`;
+    default: return `${n} - Jugada: ${p.result}`;
+  }
+};
+
 export function WatchGame({ data, id, nav }: any) {
   const [game,setGame]=useState<any>(null);
+  const [expandedAbs, setExpandedAbs] = useState<Record<string, boolean>>({});
+  const [activeTab, setActiveTab] = useState<"pbp" | "box">("pbp"); 
+
   useEffect(()=>{const u=F.onDoc("games",id!,setGame);return()=>u&&u();},[id]);
+  
   if(!game)return<div style={{...S.sec,textAlign:"center",padding:40}}><IcoBall size={40} color={K.accent} style={{animation:"spin 1.5s linear infinite",margin:"0 auto 12px"}}/></div>;
-  const aw=data.teams.find((t:any)=>t.id===game.awayTeamId);const hm=data.teams.find((t:any)=>t.id===game.homeTeamId);
-  const isTop=game.half==="top";const batTm=isTop?aw:hm;
-  const rp=[...(game.plays||[])].filter((p:any)=>p.result).reverse().slice(0,12);
-  const R:any={"1B":{l:"Sencillo",i:"🏏"},"2B":{l:"Doble",i:"✌️"},"3B":{l:"Triple",i:"🔱"},HR:{l:"Jonrón",i:"💥"},BB:{l:"BB",i:"👁"},K:{l:"K",i:"💨"},OUT:{l:"Out",i:"❌"},FLY:{l:"Fly",i:"🔼"},GROUND:{l:"Rodado",i:"⬇️"},DP:{l:"DP",i:"✖️"},SAC:{l:"SAC",i:"🎯"},HBP:{l:"HBP",i:"😤"},E:{l:"Error",i:"🫣"},WP:{l:"WP",i:"🤷"},SB:{l:"BR",i:"🏃"},CS:{l:"CS",i:"🚔"},PB:{l:"PB",i:"🧤"},BALK:{l:"Balk",i:"🚫"},RUN:{l:"Anotó",i:"🏃‍♂️"}};
-  if(game.status==="final")return(
-    <div style={S.sec}><div style={{...S.card,padding:24,textAlign:"center"}}><span style={{fontSize:40,display:"block",marginBottom:12}}>🏆</span><h2 style={{fontWeight:900,fontSize:22,marginBottom:8}}>Juego Finalizado</h2>
-      <div style={{display:"flex",justifyContent:"center",gap:20,marginBottom:16}}>{[{t:aw,s:game.awayScore,o:game.homeScore},{t:hm,s:game.homeScore,o:game.awayScore}].map((x,i)=>(
-        <div key={i} style={{textAlign:"center"}}><TeamLogo team={x.t} size={48}/><div style={{fontWeight:700,fontSize:13,marginTop:4}}>{x.t?.name}</div><div style={{fontWeight:900,fontSize:32,color:x.s>x.o?K.accent:K.dim}}>{x.s}</div></div>))}</div>
-      <button onClick={()=>nav("calendar","boxscore",id)} style={{...S.btn("ghost"),width:"100%",marginBottom:8}}>Box Score</button>
-      <button onClick={()=>nav("home")} style={S.btn("primary")}>Volver</button></div></div>);
+  
+  const aw=data.teams.find((t:any)=>t.id===game.awayTeamId);
+  const hm=data.teams.find((t:any)=>t.id===game.homeTeamId);
+  const isTop=game.half==="top";
+  const batTm=isTop?aw:hm;
+
+  // ── 🧠 MOTOR DE ESTADÍSTICAS EN TIEMPO REAL ──
+  const getStats = (pid:string) => {
+    let vb=0,h=0,hr=0,ci=0,ca=0,bb=0,k=0,db=0,tb=0,sb=0,pa=0,e=0;
+    (game.plays||[]).forEach((p:any) => { 
+      if (p.errorPlayerId === pid) e++; 
+      if (p.playerId !== pid) return; 
+      if (p.result !== "RUN" && p.result !== "SB" && p.result !== "CS" && p.result !== "PK") pa++; 
+      if (["1B","2B","3B","HR"].includes(p.result)) { vb++; h++; if(p.result==="2B")db++; if(p.result==="3B")tb++; if(p.result==="HR")hr++; }
+      else if (["BB","IBB","HBP"].includes(p.result)) bb++;
+      else if (["OUT","FLY","GROUND","K","DP","FC"].includes(p.result)) { vb++; if(p.result==="K")k++; }
+      else if (p.result === "E") vb++;
+      ci += (p.ci||0); ca += (p.ca||0); if(p.result==="SB")sb++;
+    });
+    return { vb,h,hr,ci,ca,bb,k,db,tb,sb,pa,e, avg: vb>0?(h/vb).toFixed(3):".000" };
+  };
+
+  const getPitStats = (pid:string) => {
+    let h=0,bb=0,k=0,cl=0,outs=0,pitches=0;
+    (game.plays||[]).forEach((p:any) => { if(p.pitcherId!==pid) return; if(p.isPitch) pitches++; if(!p.result) return;
+      if(["1B","2B","3B","HR","E"].includes(p.result)) h++;
+      if(["BB","IBB","HBP"].includes(p.result)) bb++;
+      if(p.result==="K") k++;
+      if(["OUT","FLY","GROUND","K","SAC","FC"].includes(p.result)) outs++;
+      if(p.result==="DP") outs+=2;
+      if(p.isEarned!==false) cl+=(p.ci||0);
+    });
+    return { h,bb,K:k,cl,outs,pitches, ip:(Math.floor(outs/3)+(outs%3)/10).toFixed(1) };
+  };
+
+  // ── 🧠 MOTOR DE AGRUPACIÓN (ESTILO ESPN) ──
+  const inningsList: any[] = [];
+  let currentInning: any = null;
+  let currentEvent: any = null; 
+
+  (game.plays||[]).forEach((p:any, idx:number) => {
+    const iKey = `${p.inning}-${p.half}`;
+    if (!currentInning || currentInning.key !== iKey) {
+      currentInning = {
+        key: iKey, inning: p.inning, half: p.half,
+        batTm: p.half === "top" ? aw : hm, pitchTm: p.half === "top" ? hm : aw,
+        pitcherName: p.pitcherName || "Lanzador",
+        events: [], R: 0, H: 0, E: 0
+      };
+      inningsList.unshift(currentInning);
+      currentEvent = { id: `ev-${idx}`, pitches: [], resultPlay: null };
+    }
+
+    if (["1B","2B","3B","HR"].includes(p.result)) currentInning.H++;
+    if (p.result === "E") currentInning.E++;
+    if (p.result === "RUN" || p.ca > 0) currentInning.R += (p.ca || 1);
+
+    if (p.isPitch && !p.result) {
+      if (!currentEvent) currentEvent = { id: `ev-${idx}`, pitches: [], resultPlay: null };
+      currentEvent.pitches.push(p);
+    } else if (p.result) {
+      if (!currentEvent) currentEvent = { id: `ev-${idx}`, pitches: [], resultPlay: null };
+      currentEvent.resultPlay = p;
+      currentInning.events.unshift(currentEvent);
+      currentEvent = null; 
+    }
+  });
+
+  const toggleAb = (eventId: string) => setExpandedAbs(prev => ({...prev, [eventId]: !prev[eventId]}));
+
+  // Jugadores Actuales y sus Estadísticas del Partido
+  const batLU_W = isTop ? (game.awayLineup||[]) : (game.homeLineup||[]);
+  const bIdx_W = isTop ? (game.awayBatterIdx||0) : (game.homeBatterIdx||0);
+  const currBat_W = batLU_W[bIdx_W % batLU_W.length] || null;
+  const pitch_W = game.currentPitcher; 
+
+  // ── LA MAGIA DE LAS FOTOS: Buscamos el perfil completo ──
+  const fullBat = currBat_W ? data.players.find((p:any) => p.id === currBat_W.id) : null;
+  const fullPit = pitch_W ? data.players.find((p:any) => p.id === pitch_W.id) : null;
+
+  const cBatStats = currBat_W ? getStats(currBat_W.id) : null;
+  const cBatStr = cBatStats ? `${cBatStats.h}-${cBatStats.vb}${cBatStats.hr>0?`, ${cBatStats.hr} HR`:""}${cBatStats.ci>0?`, ${cBatStats.ci} CI`:""}` : "0-0";
+  
+  const cPitStats = pitch_W ? getPitStats(pitch_W.id) : null;
+  const cPitStr = cPitStats ? `${cPitStats.ip} IP, ${cPitStats.h} H, ${cPitStats.cl} CL, ${cPitStats.K} K` : "0.0 IP, 0 H, 0 CL";
+
   return(
-    <div style={S.sec}>
-      <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,marginBottom:14}}><span style={{...S.badge(K.live),animation:"pulse 2s infinite"}}>● EN VIVO</span></div>
+    <div style={{...S.sec, maxWidth: 800, margin: "0 auto", paddingBottom: 40}}>
+      {/* HEADER DE MARCADOR PRINCIPAL */}
+      <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,marginBottom:14, position:"relative"}}>
+        <button onClick={()=>nav("home")} style={{position:"absolute", left:0, padding:"6px 12px", borderRadius:8, background:K.input, border:`1px solid ${K.border}`, color:K.text, cursor:"pointer", fontSize:11, fontWeight:700}}>← Volver</button>
+        <span style={{...S.badge(game.status==="final"?K.muted:K.live),animation:game.status==="final"?"none":"pulse 2s infinite"}}>{game.status==="final"?"FINALIZADO":"● EN VIVO"}</span>
+      </div>
+      
       <Scoreboard game={game} aw={aw} hm={hm} isTop={isTop} batTm={batTm}/>
-      {rp.length>0&&<div style={{...S.card}}><div style={{background:K.accentDk,padding:"8px 14px"}}><span style={{fontWeight:900,fontSize:11,color:K.accent}}>📋 JUGADA A JUGADA</span></div>
-        <div style={{padding:8}}>{rp.map((p:any,i:number)=>{const r=R[p.result]||{l:p.result,i:"⚾"};return(
-          <div key={i} style={{display:"flex",alignItems:"center",gap:6,padding:"6px 4px",borderBottom:i<rp.length-1?`1px solid ${K.border}`:"none"}}>
-            <span>{r.i}</span><span style={{fontWeight:700,fontSize:12,flex:1}}>{p.playerName}</span>
-            <span style={{...S.badge(K.muted),fontSize:9}}>{r.l} {p.errorPosition?`(${p.errorPosition})`:""}</span>
-            {p.ci>0&&<span style={{fontSize:10,color:K.accent,fontWeight:700}}>+{p.ci}CI</span>}
-            {p.isEarned===false&&<span style={{fontSize:8,color:K.yellow}}>UER</span>}
-            <span style={{fontSize:9,color:K.muted}}>E{p.inning}{p.half==="top"?"▲":"▼"}</span></div>)})}</div></div>}
-      <div style={{...S.card,padding:20,textAlign:"center",marginTop:14}}><IcoEye size={28} color={K.accent} style={{margin:"0 auto 10px"}}/><p style={{color:K.dim,fontSize:14}}>Se actualiza automáticamente</p></div>
-    </div>);
+
+      {/* ── PANEL DUELO ULTRALIMPIO ESTILO ESPN (Cero bases, cero outs, con fotos) ── */}
+      {game.status !== "final" && (
+        <div style={{...S.card, padding:"16px 20px", marginBottom:16, border:`1px solid ${K.border}`}}>
+          <div style={{display:"flex", alignItems:"center", justifyContent:"center", gap:20}}>
+            
+            {/* Lanzador */}
+            <div style={{display:"flex", alignItems:"center", gap:12, flex:1, justifyContent:"flex-end"}}>
+              <div style={{textAlign:"right"}}>
+                <div style={{fontSize:10, fontWeight:700, color:K.muted}}>LANZADOR</div>
+                <div style={{fontWeight:900, fontSize:14, color:K.blue}}>#{pitch_W?.number} {pitch_W?.name}</div>
+                <div style={{fontSize:11, fontWeight:700, color:K.dim, marginTop:2}}>{cPitStr}</div>
+              </div>
+              <div style={{width:46, height:46, borderRadius:23, background:`${K.blue}15`, border:`2px solid ${K.blue}55`, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0, overflow:"hidden"}}>
+                {(fullPit?.photo || fullPit?.photoUrl) ? (
+                  <img src={fullPit.photo || fullPit.photoUrl} alt="Pitcher" style={{width:"100%", height:"100%", objectFit:"cover"}} />
+                ) : (
+                  <IcoBall size={24} color={K.blue}/>
+                )}
+              </div>
+            </div>
+            
+            {/* Conteo Central (SOLO B y S) */}
+            <div style={{textAlign:"center", minWidth:120, borderLeft:`1px solid ${K.border}66`, borderRight:`1px solid ${K.border}66`, padding:"0 20px"}}>
+              <div style={{display:"flex", justifyContent:"center", alignItems:"center", gap:4}}>
+                <div style={{fontSize:16, fontWeight:900, color:K.green, width:18, textAlign:"right"}}>B:</div>
+                <div style={{display:"flex", gap:4}}>
+                  {[0,1,2,3].map(i=><div key={i} style={{width:12, height:12, borderRadius:6, background:i<(game.count?.balls||0)?K.green:K.border}}/>)}
+                </div>
+              </div>
+              <div style={{display:"flex", justifyContent:"center", alignItems:"center", gap:4, marginTop:8}}>
+                <div style={{fontSize:16, fontWeight:900, color:K.red, width:18, textAlign:"right"}}>S:</div>
+                <div style={{display:"flex", gap:4}}>
+                  {[0,1,2].map(i=><div key={i} style={{width:12, height:12, borderRadius:6, background:i<(game.count?.strikes||0)?K.red:K.border}}/>)}
+                </div>
+              </div>
+            </div>
+            
+            {/* Bateador Actual */}
+            <div style={{display:"flex", alignItems:"center", gap:12, flex:1, justifyContent:"flex-start"}}>
+              <div style={{width:46, height:46, borderRadius:23, background:`${K.accent}15`, border:`2px solid ${K.accent}55`, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0, overflow:"hidden"}}>
+                {(fullBat?.photo || fullBat?.photoUrl) ? (
+                  <img src={fullBat.photo || fullBat.photoUrl} alt="Bateador" style={{width:"100%", height:"100%", objectFit:"cover"}} />
+                ) : (
+                  <IcoPlay size={24} color={K.accent}/>
+                )}
+              </div>
+              <div style={{textAlign:"left"}}>
+                <div style={{fontSize:10, fontWeight:700, color:K.muted}}>AL BATE</div>
+                <div style={{fontWeight:900, fontSize:14, color:K.accent}}>#{currBat_W?.number} {currBat_W?.name}</div>
+                <div style={{fontSize:11, fontWeight:700, color:K.dim, marginTop:2}}>{cBatStr}</div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      )}
+
+      {/* PESTAÑAS INTEGRADAS (PBP vs BOX SCORE) */}
+      <div style={{display:"flex", gap:10, marginTop: 24, marginBottom:16, borderBottom:`2px solid ${K.border}`}}>
+        <div onClick={()=>setActiveTab("pbp")} style={{padding:"8px 16px", fontWeight:900, fontSize:13, color:activeTab==="pbp"?K.accent:K.muted, borderBottom:activeTab==="pbp"?`3px solid ${K.accent}`:"none", cursor:"pointer", marginBottom:-2}}>Jugada a Jugada</div>
+        <div onClick={()=>setActiveTab("box")} style={{padding:"8px 16px", fontWeight:900, fontSize:13, color:activeTab==="box"?K.accent:K.muted, borderBottom:activeTab==="box"?`3px solid ${K.accent}`:"none", cursor:"pointer", marginBottom:-2}}>Box Score</div>
+      </div>
+
+      {/* VISTA 1: PLAY BY PLAY */}
+      {activeTab === "pbp" && (
+        <div style={{display:"flex", flexDirection:"column", gap:16}}>
+          {inningsList.length === 0 && <div style={{textAlign:"center", padding:40, color:K.muted}}>Esperando el primer lanzamiento...</div>}
+          
+          {inningsList.map((inn: any) => (
+            <div key={inn.key} style={{...S.card, overflow:"hidden", border:`1px solid ${K.border}`}}>
+              <div style={{background:K.input, padding:"8px 14px", display:"flex", alignItems:"center", gap:8, borderBottom:`1px solid ${K.border}`}}>
+                <TeamLogo team={inn.batTm} size={20}/>
+                <span style={{fontWeight:900, fontSize:13, color:K.text}}>{inn.batTm?.name} - {inn.half==="top"?"Alta":"Baja"} {inn.inning}°</span>
+              </div>
+              
+              <div style={{fontSize:10, fontWeight:900, color:K.muted, padding:"6px 14px", borderBottom:`1px solid ${K.border}`, textTransform:"uppercase"}}>
+                {inn.pitcherName} LANZA PARA {inn.pitchTm?.abbr}
+              </div>
+
+              <div>
+                {inn.events.map((ev: any) => {
+                  const isExp = expandedAbs[ev.id];
+                  const hasPitches = ev.pitches && ev.pitches.length > 0;
+                  
+                  return (
+                    <div key={ev.id} style={{borderBottom:`1px solid ${K.border}44`}}>
+                      <div onClick={() => hasPitches && toggleAb(ev.id)} style={{display:"flex", alignItems:"center", padding:"10px 14px", cursor: hasPitches ? "pointer" : "default", transition:"background 0.2s", background: isExp ? "rgba(255,255,255,0.02)" : "transparent"}}>
+                        <div style={{width:24, color:K.accent, fontWeight:900, fontSize:12, display:"flex", alignItems:"center", justifyContent:"center"}}>
+                          {hasPitches ? (isExp ? "▲" : "▼") : "•"}
+                        </div>
+                        <div style={{flex:1, fontWeight:700, fontSize:12, color:K.text}}>
+                          {getPlayNarrative(ev.resultPlay)}
+                        </div>
+                      </div>
+
+                      {isExp && (
+                        <div style={{background: "rgba(0,0,0,0.2)", padding:"4px 0", borderTop:`1px solid ${K.border}22`}}>
+                          {ev.pitches.map((pt: any, i: number) => {
+                            let pLabel = "Bola", pColor = K.green;
+                            if(pt.pitchType === "called") { pLabel = "Strike cantado"; pColor = K.red; }
+                            if(pt.pitchType === "swinging") { pLabel = "Strike tirándole"; pColor = K.red; }
+                            if(pt.pitchType === "foul") { pLabel = "Foul"; pColor = K.yellow; }
+                            return (
+                              <div key={i} style={{display:"flex", alignItems:"center", padding:"6px 14px", fontSize:11, color:K.muted}}>
+                                <div style={{width:24}}></div><div style={{width:30, fontWeight:900, color:K.dim}}>{i+1}</div>
+                                <div style={{flex:1}}>{pLabel}</div>
+                                <div style={{width:40, display:"flex", justifyContent:"center"}}><div style={{width:10, height:10, borderRadius:5, background:pColor, boxShadow:`0 0 6px ${pColor}88`}}></div></div>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+              <div style={{background:K.input, padding:"8px 14px", textAlign:"right", fontSize:10, fontWeight:900, color:K.muted, textTransform:"uppercase"}}>
+                {inn.R} CARRERAS, {inn.H} HIT{inn.H!==1?"S":""}, {inn.E} ERRORES
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* VISTA 2: BOX SCORE */}
+      {activeTab === "box" && (
+        <div style={{background:K.card, borderRadius:16, padding:16, border:`1px solid ${K.border}`}}>
+          {[{label:aw?.name,lineup:game.awayLineup||[],team:"away"},{label:hm?.name,lineup:game.homeLineup||[],team:"home"}].map(({label,lineup,team})=>(
+            <div key={team} style={{marginBottom:24}}>
+              <h4 style={{fontWeight:900,fontSize:14,color:K.text,marginBottom:8, borderBottom:`1px solid ${K.border}`, paddingBottom:6}}>{label} — BATEADORES</h4>
+              <div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:11,minWidth:420}}>
+                <thead><tr style={{color:K.muted,borderBottom:`1px solid ${K.border}`}}>
+                  {["JUGADOR","PA","VB","H","2B","3B","HR","CI","CA","BB","K","BR","E","AVG"].map(c=><th key={c} style={{textAlign:c==="JUGADOR"?"left":"center",padding:6,fontSize:9}}>{c}</th>)}</tr></thead>
+                <tbody>{lineup.map((p:any)=>{const s=getStats(p.id);return(
+                  <tr key={p.id} style={{borderBottom:`1px solid ${K.border}66`}}>
+                    <td style={{padding:6,fontWeight:700}}>#{p.number} {p.name} <span style={{fontSize:8,color:K.muted}}>{p.fieldPos}</span></td>
+                    <td style={{textAlign:"center",padding:6}}>{s.pa}</td><td style={{textAlign:"center",padding:6}}>{s.vb}</td>
+                    <td style={{textAlign:"center",padding:6,fontWeight:700}}>{s.h}</td><td style={{textAlign:"center",padding:6}}>{s.db}</td>
+                    <td style={{textAlign:"center",padding:6}}>{s.tb}</td><td style={{textAlign:"center",padding:6,color:s.hr>0?K.red:K.text}}>{s.hr}</td>
+                    <td style={{textAlign:"center",padding:6}}>{s.ci}</td><td style={{textAlign:"center",padding:6}}>{s.ca}</td>
+                    <td style={{textAlign:"center",padding:6}}>{s.bb}</td><td style={{textAlign:"center",padding:6}}>{s.k}</td>
+                    <td style={{textAlign:"center",padding:6}}>{s.sb}</td><td style={{textAlign:"center",padding:6,color:s.e>0?K.red:K.text,fontWeight:s.e>0?900:400}}>{s.e}</td>
+                    <td style={{textAlign:"center",padding:6,fontWeight:900,color:K.accent}}>{s.avg}</td></tr>)})}</tbody>
+              </table></div>
+              {(()=>{
+                const pids=[...new Set((game.plays||[]).filter((p:any)=>p.pitcherId&&p.result).map((p:any)=>p.pitcherId))].filter(pid=>{
+                const ih=(game.homeLineup||[]).find((x:any)=>x.id===pid);return team==="home"?!!ih:!ih;});
+                if(!pids.length)return null;return<div style={{marginTop:12}}>
+                  <h4 style={{fontWeight:800,fontSize:12,color:K.blue,marginBottom:6}}>⚾ PITCHERS — {label}</h4>
+                  <div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:11,minWidth:350}}>
+                    <thead><tr style={{color:K.muted,borderBottom:`1px solid ${K.border}`}}>
+                      {["PITCHER","IP","H","CL","BB","K","LANZ","ERA"].map(c=><th key={c} style={{textAlign:c==="PITCHER"?"left":"center",padding:6,fontSize:9}}>{c}</th>)}</tr></thead>
+                    <tbody>{pids.map(pid=>{const ps=getPitStats(pid as string);const nm=(game.plays||[]).find((p:any)=>p.pitcherId===pid)?.pitcherName||"?";
+                      const era=parseFloat(ps.ip)>0?((ps.cl*7)/parseFloat(ps.ip)).toFixed(2):"0.00";
+                      return<tr key={pid as string} style={{borderBottom:`1px solid ${K.border}66`}}>
+                        <td style={{padding:6,fontWeight:700}}>{nm}</td><td style={{textAlign:"center",padding:6,fontWeight:700,color:K.accent}}>{ps.ip}</td>
+                        <td style={{textAlign:"center",padding:6}}>{ps.h}</td><td style={{textAlign:"center",padding:6,color:K.red}}>{ps.cl}</td>
+                        <td style={{textAlign:"center",padding:6}}>{ps.bb}</td><td style={{textAlign:"center",padding:6,fontWeight:700}}>{ps.K}</td>
+                        <td style={{textAlign:"center",padding:6}}>{ps.pitches}</td><td style={{textAlign:"center",padding:6,fontWeight:900,color:K.blue}}>{era}</td></tr>})}</tbody>
+                  </table></div></div>})()}
+            </div>))}
+        </div>
+      )}
+
+    </div>
+  );
 }

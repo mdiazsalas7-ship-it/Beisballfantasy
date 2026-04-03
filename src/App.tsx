@@ -143,7 +143,8 @@ export default function App() {
                 <IcoBack size={20} />
               </button>
             )}
-            {league ? <LeagueLogo league={league} size={28} /> : <IcoBall size={24} color={K.accent} />}
+            {/* ── AQUÍ ESTÁ EL LOGO REEMPLAZANDO A LA PELOTA ── */}
+            {league ? <LeagueLogo league={league} size={28} /> : <img src="https://i.postimg.cc/XJr7JyC0/image.png" alt="Logo" style={{ width: 28, height: 28, objectFit: 'contain' }} />}
             <div>
               <h1 style={{ fontSize: league ? 14 : 17, fontWeight: 900, background: `linear-gradient(135deg,${K.accent},${K.blue})`, WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>
                 {league ? league.name : "Béisbol Menor"}

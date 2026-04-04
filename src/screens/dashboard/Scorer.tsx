@@ -629,6 +629,23 @@ export function LiveGame({ data, id, nav }: any) {
           </div>
 
           <div style={{display:"flex",alignItems:"center",gap:16}}>
+            
+            {/* 🔴 NUEVO: CONTEO DE BOLAS, STRIKES Y OUTS AQUI 🔴 */}
+            <div style={{display:"flex", flexDirection:"column", gap:4, borderRight:`1px solid ${K.border}44`, paddingRight:12}}>
+               <div style={{display:"flex", alignItems:"center", gap:6}}>
+                 <span style={{fontSize:10, fontWeight:900, color:K.green, width:8}}>B</span>
+                 <div style={{display:"flex", gap:3}}>{[0,1,2,3].map(i=><div key={i} style={{width:8, height:8, borderRadius:4, background:i<(count?.balls||0)?K.green:K.border}}/>)}</div>
+               </div>
+               <div style={{display:"flex", alignItems:"center", gap:6}}>
+                 <span style={{fontSize:10, fontWeight:900, color:K.red, width:8}}>S</span>
+                 <div style={{display:"flex", gap:3}}>{[0,1,2].map(i=><div key={i} style={{width:8, height:8, borderRadius:4, background:i<(count?.strikes||0)?K.red:K.border}}/>)}</div>
+               </div>
+               <div style={{display:"flex", alignItems:"center", gap:6}}>
+                 <span style={{fontSize:10, fontWeight:900, color:K.muted, width:8}}>O</span>
+                 <div style={{display:"flex", gap:3}}>{[0,1,2].map(i=><div key={i} style={{width:8, height:8, borderRadius:4, background:i<(game.outs||0)?K.red:K.border}}/>)}</div>
+               </div>
+            </div>
+
             <div style={{textAlign:"center"}}><div style={{fontSize:9,fontWeight:700,color:K.muted}}>ENTRADA</div><div style={{fontSize:16,fontWeight:900,color:K.accent}}>{isTop?"▲":"▼"} {game.inning}°</div></div>
             <button onClick={()=>{if(confirm("¿Seguro que deseas forzar el FINAL del juego?"))finishGame(plays);}} style={{padding:"6px 10px",borderRadius:8,background:K.red,border:"none",color:"#fff",fontSize:10,fontWeight:700,cursor:"pointer"}}>🏁 FIN</button>
           </div>
@@ -669,22 +686,12 @@ export function LiveGame({ data, id, nav }: any) {
           
           <div style={{position:"relative",width:180,height:180, marginBottom:10}}>
             <svg width={180} height={180} viewBox="0 0 180 180"><polygon points="90,15 165,90 90,165 15,90" fill="none" stroke={K.border} strokeWidth="2"/><line x1="90" y1="165" x2="165" y2="90" stroke={K.border} strokeWidth="1" opacity=".3"/><line x1="90" y1="165" x2="15" y2="90" stroke={K.border} strokeWidth="1" opacity=".3"/></svg>
-            
-            {/* DEFENSIVOS VISIBLES */}
-            {[ {p:"C(2)",...POS_COORDS[2]}, {p:"P(1)",...POS_COORDS[1]}, {p:"1B(3)",...POS_COORDS[3]}, {p:"2B(4)",...POS_COORDS[4]}, {p:"3B(5)",...POS_COORDS[5]}, {p:"SS(6)",...POS_COORDS[6]}, {p:"LF(7)",...POS_COORDS[7]}, {p:"CF(8)",...POS_COORDS[8]}, {p:"RF(9)",...POS_COORDS[9]} ].map(d => {
-              const name = getDefName(d.p); if (!name) return null;
-              return <div key={d.p} style={{position:"absolute", left:d.x, top:d.y, transform:"translate(-50%,-50%)", fontSize:8, fontWeight:800, color:K.blue, background:"rgba(13, 31, 74, 0.85)", border:`1px solid ${K.blue}55`, padding:"3px 5px", borderRadius:6, zIndex:5, whiteSpace:"nowrap", textShadow:"0 1px 2px #000"}}>{d.p.split("(")[0]} {name}</div>
-            })}
 
             <div style={{position:"absolute",bottom:4,left:"50%",transform:"translateX(-50%) rotate(45deg)",width:18,height:18,background:K.muted,borderRadius:2}}/>
             {[{idx:0,s:{right:4,top:"50%",transform:"translateY(-50%) rotate(45deg)"}},{idx:1,s:{left:"50%",top:2,transform:"translateX(-50%) rotate(45deg)"}},{idx:2,s:{left:4,top:"50%",transform:"translateY(-50%) rotate(45deg)"}}].map(b=>(
               <div key={b.idx} style={{position:"absolute",...b.s}}>
                 <div onClick={async()=>{const bs=[...bases];bs[b.idx]=bs[b.idx]?null:{id:"ghost",name:"Corredor"};await up({bases:bs});}}
                      style={{width:22,height:22,borderRadius:3,cursor:"pointer",background:bases[b.idx]?K.yellow:K.border,border:`2px solid ${bases[b.idx]?K.yellow:K.muted}`,boxShadow:bases[b.idx]?`0 0 12px ${K.yellow}66`:"none",transition:"all .2s"}}/></div>))}
-            
-            {bases[0] && <div style={{position:"absolute", right: -40, top: "65%", transform:"translateY(-50%)", fontSize:9, fontWeight:900, color:"#000", background:K.yellow, padding:"2px 6px", borderRadius:4, zIndex:10, boxShadow:`0 2px 5px ${K.yellow}55`}}>{formatName(bases[0].name)}</div>}
-            {bases[1] && <div style={{position:"absolute", left: "50%", top: -25, transform:"translateX(-50%)", fontSize:9, fontWeight:900, color:"#000", background:K.yellow, padding:"2px 6px", borderRadius:4, zIndex:10, boxShadow:`0 2px 5px ${K.yellow}55`}}>{formatName(bases[1].name)}</div>}
-            {bases[2] && <div style={{position:"absolute", left: -40, top: "65%", transform:"translateY(-50%)", fontSize:9, fontWeight:900, color:"#000", background:K.yellow, padding:"2px 6px", borderRadius:4, zIndex:10, boxShadow:`0 2px 5px ${K.yellow}55`}}>{formatName(bases[2].name)}</div>}
           </div>
           <div style={{display:"flex",gap:16,marginTop:20}}>{["1ra","2da","3ra"].map((l,i)=><span key={i} style={{fontSize:10,fontWeight:700,color:bases[i]?K.yellow:K.muted}}>{l} {bases[i]?"●":"○"}</span>)}</div></div>
 
@@ -1006,9 +1013,6 @@ export function WatchGame({ data, id, nav }: any) {
   const hmE = game.homeErrors || game.homeE || 0; 
   const totalCols = Math.max(game.totalInnings||9, Math.max((game.awayInnings||[]).length, (game.homeInnings||[]).length));
 
-  const pitchLineup_W = isTop ? (game.homeLineup||[]) : (game.awayLineup||[]);
-  const getDefName_W = (pos: string) => { const p = pitchLineup_W.find((x:any) => x.fieldPos === pos); if (!p) return ""; return formatName(p.name); };
-
   return(
     <div style={{...S.sec, maxWidth: 1000, margin: "0 auto", paddingBottom: 40}}>
       {/* HEADER DE MARCADOR PRINCIPAL */}
@@ -1097,18 +1101,12 @@ export function WatchGame({ data, id, nav }: any) {
              </div>
           </div>
 
-          {/* DIAMANTE EN VIVO (Más pequeño y SIN nombres) */}
-          <div style={{...S.card, border:`1px solid ${K.border}`, display:"flex", alignItems:"center", justifyContent:"center", padding:"10px 0", background:"#080c16"}}>
-             <div style={{position:"relative", width:180, height:180, transform:"scale(0.75)", transformOrigin:"center"}}>
+          {/* DIAMANTE EN VIVO (MÁS PEQUEÑO Y SIN NINGÚN TEXTO) */}
+          <div style={{...S.card, border:`1px solid ${K.border}`, display:"flex", alignItems:"center", justifyContent:"center", padding:"10px 0", background:"#080c16", overflow:"hidden"}}>
+             <div style={{position:"relative", width:180, height:180, transform:"scale(0.60)", transformOrigin:"center", margin:"-10px 0"}}>
                 <svg width={180} height={180} viewBox="0 0 180 180"><polygon points="90,15 165,90 90,165 15,90" fill="none" stroke={K.border} strokeWidth="2"/><line x1="90" y1="165" x2="165" y2="90" stroke={K.border} strokeWidth="1" opacity=".3"/><line x1="90" y1="165" x2="15" y2="90" stroke={K.border} strokeWidth="1" opacity=".3"/></svg>
                 
-                {/* Defensivos SIN nombres */}
-                {[ {p:"C(2)",...POS_COORDS[2]}, {p:"P(1)",...POS_COORDS[1]}, {p:"1B(3)",...POS_COORDS[3]}, {p:"2B(4)",...POS_COORDS[4]}, {p:"3B(5)",...POS_COORDS[5]}, {p:"SS(6)",...POS_COORDS[6]}, {p:"LF(7)",...POS_COORDS[7]}, {p:"CF(8)",...POS_COORDS[8]}, {p:"RF(9)",...POS_COORDS[9]} ].map(d => {
-                  const name = getDefName_W(d.p); if (!name) return null;
-                  return <div key={d.p} style={{position:"absolute", left:d.x, top:d.y, transform:"translate(-50%,-50%)", fontSize:8, fontWeight:900, color:K.bg, background:K.blue, border:`1px solid ${K.blue}55`, padding:"3px 4px", borderRadius:4, zIndex:5}}>{d.p.split("(")[0]}</div>
-                })}
-
-                {/* Bases y Corredores SIN nombres */}
+                {/* Bases y Corredores - SOLO LOS CUADROS AMARILLOS, SIN TEXTO */}
                 {(()=>{ 
                    const b = game.bases || [null,null,null];
                    return (

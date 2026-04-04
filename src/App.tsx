@@ -10,7 +10,7 @@ import { TeamsPage, TeamDetail, UpperDeckCard, PlayerForm } from "./screens/dash
 import StandingsPage from "./screens/dashboard/Standings.tsx";
 import StatsPage from "./screens/dashboard/Stats.tsx";
 import NewsPage from "./screens/dashboard/News.tsx";
-import { CalendarPage, BoxScore } from "./screens/dashboard/Calendar.tsx";
+import { CalendarPage } from "./screens/dashboard/Calendar.tsx";
 import { ScorerPage, LiveGame, WatchGame } from "./screens/dashboard/Scorer.tsx";
 import MetroTicker from "./components/MetroTicker.tsx"; // Importamos el Ticker global
 

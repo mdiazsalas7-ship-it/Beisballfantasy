@@ -9,7 +9,8 @@ export function CalendarPage({ data, nav }: any) {
   const finals = data.games.filter((g: any) => g.status === "final").sort((a: any, b: any) => (b.createdAt || 0) - (a.createdAt || 0));
   const live = data.games.filter((g: any) => g.status === "live");
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({ awayTeamId: "", homeTeamId: "", date: "", time: "", location: "", innings: 9 });  const findTeam = (id: string) => data.teams.find((t: any) => t.id === id);
+  const [form, setForm] = useState({ awayTeamId: "", homeTeamId: "", date: "", time: "", location: "", innings: 9 });  
+  const findTeam = (id: string) => data.teams.find((t: any) => t.id === id);
 
   const submit = async () => {
     if (!form.awayTeamId || !form.homeTeamId || form.awayTeamId === form.homeTeamId || !form.date) return;
@@ -117,7 +118,7 @@ export function CalendarPage({ data, nav }: any) {
         const hmWon = g.homeScore > g.awayScore;
 
         return (
-          <div key={g.id} onClick={() => nav("calendar", "boxscore", g.id)}
+          <div key={g.id} onClick={() => nav("scorer", "watch", g.id)}
             style={{ ...S.card, marginBottom: 12, cursor: "pointer", overflow: "hidden" }}>
 
             {/* Header: status + date */}
@@ -239,169 +240,6 @@ export function CalendarPage({ data, nav }: any) {
           </div>
         </Modal>
       )}
-    </div>
-  );
-}
-
-// ═══ BOX SCORE — Pitchers below their team ═══
-export function BoxScore({ data, id, nav }: any) {
-  const [game, setGame] = useState<any>(null);
-  useEffect(() => { const u = F.onDoc("games", id!, setGame); return () => u && u(); }, [id]);
-  if (!game) return <div style={{ ...S.sec, textAlign: "center", padding: 40 }}><IcoBall size={40} color={K.accent} style={{ animation: "spin 1.5s linear infinite" }} /></div>;
-
-  const aw = data.teams.find((t: any) => t.id === game.awayTeamId);
-  const hm = data.teams.find((t: any) => t.id === game.homeTeamId);
-  const plays = game.plays || [];
-
-  // Batting stats by team
-  const aggBat = (teamFilter: string) => {
-    const stats: Record<string, any> = {};
-    plays.forEach((p: any) => {
-      if (!p.playerId || p.team !== teamFilter) return;
-      if (!stats[p.playerId]) stats[p.playerId] = { name: p.playerName || "?", VB: 0, H: 0, HR: 0, CI: 0, CA: 0, BB: 0, K: 0, "2B": 0, "3B": 0, BR: 0 };
-      const s = stats[p.playerId];
-      if (["1B", "2B", "3B", "HR"].includes(p.result)) { s.VB++; s.H++; if (p.result === "2B") s["2B"]++; if (p.result === "3B") s["3B"]++; if (p.result === "HR") s.HR++; }
-      else if (["BB", "HBP"].includes(p.result)) s.BB++;
-      else if (["OUT", "FLY", "GROUND", "K", "DP", "SAC", "E"].includes(p.result)) { s.VB++; if (p.result === "K") s.K++; }
-      s.CI += (p.ci || 0); s.CA += (p.ca || 0);
-      if (p.result === "SB") s.BR++;
-    });
-    return Object.values(stats);
-  };
-
-  // Pitching stats by team side
-  const aggPit = (side: string) => {
-    const pp = plays.filter((p: any) => p.pitcherId && p.result);
-    const pids = [...new Set(pp.map((p: any) => p.pitcherId))].filter(pid => {
-      const inHome = (game.homeLineup || []).find((x: any) => x.id === pid);
-      return side === "home" ? !!inHome : !inHome;
-    });
-    return pids.map(pid => {
-      let h = 0, bb = 0, k = 0, cl = 0, outs = 0;
-      pp.forEach((p: any) => { if (p.pitcherId !== pid) return;
-        if (["1B", "2B", "3B", "HR", "E"].includes(p.result)) h++;
-        if (["BB", "HBP"].includes(p.result)) bb++;
-        if (p.result === "K") k++;
-        if (["OUT", "FLY", "GROUND", "K", "SAC"].includes(p.result)) outs++;
-        if (p.result === "DP") outs += 2;
-        cl += (p.ci || 0);
-      });
-      const ip = (Math.floor(outs / 3) + (outs % 3) / 10).toFixed(1);
-      const era = parseFloat(ip) > 0 ? ((cl * 7) / parseFloat(ip)).toFixed(2) : "0.00";
-      const name = pp.find((p: any) => p.pitcherId === pid)?.pitcherName || "?";
-      return { name, ip, h, cl, bb, k, era };
-    });
-  };
-
-  // Component: Batting table
-  const BatTable = ({ stats }: any) => (
-    <div style={{ overflowX: "auto" }}>
-      <table style={{ ...S.tbl, fontSize: 11, minWidth: 450 }}>
-        <thead><tr>
-          {["JUGADOR", "VB", "H", "2B", "3B", "HR", "CI", "CA", "BB", "K", "BR", "AVG"].map(c =>
-            <th key={c} style={{ ...S.th, textAlign: c === "JUGADOR" ? "left" : "center", fontSize: 9 }}>{c}</th>)}
-        </tr></thead>
-        <tbody>
-          {stats.length > 0 ? stats.map((p: any, i: number) => {
-            const avg = p.VB > 0 ? (p.H / p.VB).toFixed(3) : ".000";
-            return (
-              <tr key={i} style={{ borderBottom: `1px solid ${K.border}` }}>
-                <td style={{ ...S.td, fontWeight: 700 }}>{p.name}</td>
-                <td style={{ ...S.td, textAlign: "center" }}>{p.VB}</td>
-                <td style={{ ...S.td, textAlign: "center", fontWeight: 700 }}>{p.H}</td>
-                <td style={{ ...S.td, textAlign: "center" }}>{p["2B"]}</td>
-                <td style={{ ...S.td, textAlign: "center" }}>{p["3B"]}</td>
-                <td style={{ ...S.td, textAlign: "center", color: p.HR > 0 ? K.red : K.text, fontWeight: p.HR > 0 ? 700 : 400 }}>{p.HR}</td>
-                <td style={{ ...S.td, textAlign: "center", fontWeight: 700 }}>{p.CI}</td>
-                <td style={{ ...S.td, textAlign: "center" }}>{p.CA}</td>
-                <td style={{ ...S.td, textAlign: "center" }}>{p.BB}</td>
-                <td style={{ ...S.td, textAlign: "center" }}>{p.K}</td>
-                <td style={{ ...S.td, textAlign: "center" }}>{p.BR}</td>
-                <td style={{ ...S.td, textAlign: "center", fontWeight: 900, color: K.accent }}>{avg}</td>
-              </tr>);
-          }) : <tr><td colSpan={12} style={{ ...S.td, textAlign: "center", color: K.muted }}>Sin datos</td></tr>}
-        </tbody>
-      </table>
-    </div>
-  );
-
-  // Component: Pitching table
-  const PitTable = ({ stats }: any) => {
-    if (stats.length === 0) return null;
-    return (
-      <div style={{ overflowX: "auto", marginTop: 8 }}>
-        <div style={{ fontSize: 10, fontWeight: 800, color: K.blue, padding: "6px 8px", textTransform: "uppercase" }}>⚾ Pitcheo</div>
-        <table style={{ ...S.tbl, fontSize: 11, minWidth: 350 }}>
-          <thead><tr>
-            {["PITCHER", "IP", "H", "CL", "BB", "K", "ERA"].map(c =>
-              <th key={c} style={{ ...S.th, textAlign: c === "PITCHER" ? "left" : "center", fontSize: 9 }}>{c}</th>)}
-          </tr></thead>
-          <tbody>
-            {stats.map((p: any, i: number) => (
-              <tr key={i} style={{ borderBottom: `1px solid ${K.border}` }}>
-                <td style={{ ...S.td, fontWeight: 700 }}>{p.name}</td>
-                <td style={{ ...S.td, textAlign: "center", fontWeight: 700, color: K.accent }}>{p.ip}</td>
-                <td style={{ ...S.td, textAlign: "center" }}>{p.h}</td>
-                <td style={{ ...S.td, textAlign: "center", color: K.red }}>{p.cl}</td>
-                <td style={{ ...S.td, textAlign: "center" }}>{p.bb}</td>
-                <td style={{ ...S.td, textAlign: "center", fontWeight: 700 }}>{p.k}</td>
-                <td style={{ ...S.td, textAlign: "center", fontWeight: 900, color: K.blue }}>{p.era}</td>
-              </tr>))}
-          </tbody>
-        </table>
-      </div>
-    );
-  };
-
-  // Component: Full team section (batting + pitching together)
-  const TeamSection = ({ title, team, batStats, pitStats, color }: any) => (
-    <div style={{ ...S.card, marginBottom: 14, overflow: "hidden" }}>
-      <div style={{ background: color || K.accent, padding: "8px 14px", display: "flex", alignItems: "center", gap: 8 }}>
-        <TeamLogo team={team} size={20} />
-        <span style={{ fontWeight: 900, fontSize: 12, color: "#fff" }}>{title}</span>
-      </div>
-      <BatTable stats={batStats} />
-      <PitTable stats={pitStats} />
-    </div>
-  );
-
-  return (
-    <div style={S.sec}>
-      <h2 style={S.secT}>Box Score</h2>
-
-      {/* Score header */}
-      <div style={{ ...S.card, padding: 20, marginBottom: 16, textAlign: "center" }}>
-        <div style={{ display: "flex", justifyContent: "center", gap: 24, alignItems: "center", marginBottom: 12 }}>
-          <div style={{ textAlign: "center" }}><TeamLogo team={aw} size={44} /><div style={{ fontWeight: 800, fontSize: 14, marginTop: 6 }}>{aw?.name}</div></div>
-          <div><div style={{ fontWeight: 900, fontSize: 36 }}>
-            <span style={{ color: game.awayScore > game.homeScore ? K.accent : K.dim }}>{game.awayScore}</span>
-            <span style={{ color: K.muted, margin: "0 6px" }}>-</span>
-            <span style={{ color: game.homeScore > game.awayScore ? K.accent : K.dim }}>{game.homeScore}</span>
-          </div><span style={S.badge(game.status === "live" ? K.live : K.muted)}>{game.status === "live" ? "EN VIVO" : "FINAL"}</span></div>
-          <div style={{ textAlign: "center" }}><TeamLogo team={hm} size={44} /><div style={{ fontWeight: 800, fontSize: 14, marginTop: 6 }}>{hm?.name}</div></div>
-        </div>
-      </div>
-
-      {/* Linescore */}
-      <div style={{ ...S.card, overflowX: "auto", marginBottom: 16 }}>
-        <table style={{ ...S.tbl, fontSize: 12 }}>
-          <thead><tr><th style={{ ...S.th, fontSize: 10 }}>Eq</th>
-            {Array.from({ length: game.totalInnings || 7 }).map((_: any, i: number) => <th key={i} style={{ ...S.th, textAlign: "center", fontSize: 10 }}>{i + 1}</th>)}
-            <th style={{ ...S.th, textAlign: "center", fontWeight: 900 }}>R</th></tr></thead>
-          <tbody>
-            {[{ t: aw, inn: game.awayInnings, s: game.awayScore }, { t: hm, inn: game.homeInnings, s: game.homeScore }].map((x, i) => (
-              <tr key={i}><td style={{ ...S.td, fontWeight: 700 }}><div style={{ display: "flex", alignItems: "center", gap: 6 }}><TeamLogo team={x.t} size={16} />{x.t?.abbr}</div></td>
-                {(x.inn || []).map((r: any, j: number) => <td key={j} style={{ ...S.td, textAlign: "center", fontWeight: 700, color: r !== null ? K.text : K.muted }}>{r !== null ? r : "—"}</td>)}
-                <td style={{ ...S.td, textAlign: "center", fontWeight: 900, fontSize: 16, color: K.accent }}>{x.s}</td></tr>))}
-          </tbody>
-        </table>
-      </div>
-
-      {/* Away team: batting + pitching */}
-      <TeamSection title={aw?.name || "Visitante"} team={aw} batStats={aggBat("away")} pitStats={aggPit("away")} color={aw?.color || K.accent} />
-
-      {/* Home team: batting + pitching */}
-      <TeamSection title={hm?.name || "Local"} team={hm} batStats={aggBat("home")} pitStats={aggPit("home")} color={hm?.color || K.blue} />
     </div>
   );
 }

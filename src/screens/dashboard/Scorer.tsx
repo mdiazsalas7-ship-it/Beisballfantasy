@@ -53,7 +53,7 @@ export function ScorerPage({ data, nav }: any) {
     </div>);
 }
 
-// ═══ SETUP DE ALINEACIONES PRE-JUEGO ═══
+// ═══ SETUP DE ALINEACIONES Y CUERPO TÉCNICO PRE-JUEGO ═══
 function PreGameSetup({ game, data, up, nav }: any) {
   const aw = data.teams.find((t:any) => t.id === game.awayTeamId);
   const hm = data.teams.find((t:any) => t.id === game.homeTeamId);
@@ -63,6 +63,11 @@ function PreGameSetup({ game, data, up, nav }: any) {
   const [tab, setTab] = useState<"away"|"home">("away");
   const [awLu, setAwLu] = useState<any[]>(game.awayLineup || []);
   const [hmLu, setHmLu] = useState<any[]>(game.homeLineup || []);
+
+  // Nuevos Estados para el Staff y Árbitros
+  const [umpires, setUmpires] = useState({ hp: "", bases: "" });
+  const [awStaff, setAwStaff] = useState({ manager: aw?.manager || "", coach1B: aw?.coach1B || "", coach3B: aw?.coach3B || "" });
+  const [hmStaff, setHmStaff] = useState({ manager: hm?.manager || "", coach1B: hm?.coach1B || "", coach3B: hm?.coach3B || "" });
 
   const POS_OPTIONS = ["P(1)","C(2)","1B(3)","2B(4)","3B(5)","SS(6)","LF(7)","CF(8)","RF(9)","BD"];
 
@@ -106,6 +111,9 @@ function PreGameSetup({ game, data, up, nav }: any) {
       awayStartingPitcher: awLu.find(p=>p.fieldPos==="P(1)"),
       homeStartingPitcher: hmLu.find(p=>p.fieldPos==="P(1)"),
       currentPitcher: hmLu.find(p=>p.fieldPos==="P(1)"),
+      umpires, 
+      awayStaff: awStaff, 
+      homeStaff: hmStaff,
       awayScore:0, homeScore:0, awayInnings:[], homeInnings:[],
       awayHits:0, homeHits:0, awayErrors:0, homeErrors:0, awayE:0, homeE:0,
       inning:1, half:"top", outs:0, bases:[null,null,null], count:{balls:0,strikes:0}, plays:[],
@@ -114,7 +122,7 @@ function PreGameSetup({ game, data, up, nav }: any) {
   };
 
   return (
-    <div style={{...S.sec, maxWidth: 800, margin: "0 auto", paddingBottom: 80}}>
+    <div style={{...S.sec, maxWidth: 800, margin: "0 auto", paddingBottom: 100}}>
       <div style={{display:"flex", gap:8, marginBottom:16, alignItems:"center"}}>
         <button onClick={()=>nav("home")} style={{...S.btn("ghost"), padding:"6px 12px"}}>← Volver</button>
         <h2 style={{...S.secT, margin:0, flex:1, textAlign:"center"}}>Alineaciones</h2>
@@ -125,7 +133,7 @@ function PreGameSetup({ game, data, up, nav }: any) {
         <button onClick={()=>setTab("home")} style={{flex:1, padding:12, fontWeight:900, background:tab==="home"?K.blue:K.input, color:tab==="home"?"#fff":K.muted, border:"none", cursor:"pointer"}}>{hm?.abbr} (Home)</button>
       </div>
 
-      <div style={{display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(300px, 1fr))", gap:16}}>
+      <div style={{display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(300px, 1fr))", gap:16, marginBottom:24}}>
         <div style={{...S.card, padding:12}}>
           <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10}}>
             <h3 style={{fontWeight:900, fontSize:13, color:K.text}}>Orden al Bate ({lu.length}/9)</h3>
@@ -163,6 +171,34 @@ function PreGameSetup({ game, data, up, nav }: any) {
               </button>
             ))}
             {roster.length === 0 && <div style={{fontSize:11, color:K.muted}}>No hay jugadores disponibles en el roster</div>}
+          </div>
+        </div>
+      </div>
+
+      {/* 📋 NUEVO: SECCIÓN CUERPO TÉCNICO Y ÁRBITROS */}
+      <div style={{...S.card, padding: 16, border:`1px solid ${K.border}`}}>
+        <h3 style={{fontWeight:900, fontSize:14, color:K.text, marginBottom:12, display:"flex", alignItems:"center", gap:6}}>📋 Cuerpo Técnico y Árbitros</h3>
+        
+        <div style={{display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(280px, 1fr))", gap:16}}>
+          {/* Staff del Equipo seleccionado en la pestaña */}
+          <div>
+            <h4 style={{fontSize:11, fontWeight:800, color:tab==="away"?K.accent:K.blue, textTransform:"uppercase", marginBottom:8}}>Staff: {tab==="away"?aw?.name:hm?.name}</h4>
+            <div style={{display:"flex", flexDirection:"column", gap:8}}>
+              <div><label style={{...S.label, fontSize:10}}>Manager (DT)</label><input style={{...S.input, padding:"6px 10px", fontSize:12}} placeholder="Nombre del Manager" value={tab==="away"?awStaff.manager:hmStaff.manager} onChange={(e)=>tab==="away"?setAwStaff({...awStaff, manager:e.target.value}):setHmStaff({...hmStaff, manager:e.target.value})} /></div>
+              <div style={{display:"flex", gap:8}}>
+                <div style={{flex:1}}><label style={{...S.label, fontSize:10}}>Coach 1B</label><input style={{...S.input, padding:"6px 10px", fontSize:12}} placeholder="Coach 1B" value={tab==="away"?awStaff.coach1B:hmStaff.coach1B} onChange={(e)=>tab==="away"?setAwStaff({...awStaff, coach1B:e.target.value}):setHmStaff({...hmStaff, coach1B:e.target.value})} /></div>
+                <div style={{flex:1}}><label style={{...S.label, fontSize:10}}>Coach 3B</label><input style={{...S.input, padding:"6px 10px", fontSize:12}} placeholder="Coach 3B" value={tab==="away"?awStaff.coach3B:hmStaff.coach3B} onChange={(e)=>tab==="away"?setAwStaff({...awStaff, coach3B:e.target.value}):setHmStaff({...hmStaff, coach3B:e.target.value})} /></div>
+              </div>
+            </div>
+          </div>
+
+          {/* Árbitros (Umpires) - Compartido */}
+          <div style={{borderLeft:`1px solid ${K.border}44`, paddingLeft: 16}}>
+            <h4 style={{fontSize:11, fontWeight:800, color:K.muted, textTransform:"uppercase", marginBottom:8}}>Oficiales del Juego</h4>
+            <div style={{display:"flex", flexDirection:"column", gap:8}}>
+              <div><label style={{...S.label, fontSize:10}}>Árbitro Principal (Home)</label><input style={{...S.input, padding:"6px 10px", fontSize:12}} placeholder="Nombre del Principal" value={umpires.hp} onChange={(e)=>setUmpires({...umpires, hp:e.target.value})} /></div>
+              <div><label style={{...S.label, fontSize:10}}>Árbitro Auxiliar (Bases)</label><input style={{...S.input, padding:"6px 10px", fontSize:12}} placeholder="Nombre del Auxiliar" value={umpires.bases} onChange={(e)=>setUmpires({...umpires, bases:e.target.value})} /></div>
+            </div>
           </div>
         </div>
       </div>
@@ -251,7 +287,6 @@ export function LiveGame({ data, id, nav }: any) {
     return map;
   };
 
-  // Motor Estadístico Mejorado (Suma Juego + Temporada para AVG real)
   const getStats = (pid:string) => {
     let vb=0,h=0,hr=0,ci=0,ca=0,bb=0,k=0,db=0,tb=0,sb=0,pa=0,e=0;
     plays.forEach((p:any) => { 
@@ -380,7 +415,6 @@ export function LiveGame({ data, id, nav }: any) {
   const confirmHit = async () => {
     try {
       if(!showConfirm) return; 
-      // Validación Estricta de Error ("E")
       if (showConfirm.type === "E" && !showConfirm.extra?.errorPlayerId) return alert("⚠️ Debes seleccionar al fildeador que cometió el Error.");
       
       const { type, runs, newBases, runnersScored } = showConfirm;
@@ -616,10 +650,6 @@ export function LiveGame({ data, id, nav }: any) {
   };
 
   const rp=[...plays].filter((p:any)=>p.result).reverse().slice(0,6);
-  const awH=game.awayHits || 0;
-  const hmH=game.homeHits || 0;
-  const awE=game.awayErrors || game.awayE || 0; 
-  const hmE=game.homeErrors || game.homeE || 0; 
   const totalCols = Math.max(game.totalInnings||9, Math.max((game.awayInnings||[]).length, (game.homeInnings||[]).length));
 
   const Btn=({label,icon,color,bg,onClick,size="md",disabled=false}:any)=>(
@@ -643,39 +673,24 @@ export function LiveGame({ data, id, nav }: any) {
       .node-btn { width:24px; height:24px; border-radius:12px; font-size:10px; font-weight:900; display:flex; align-items:center; justify-content:center; cursor:pointer; position:absolute; transform:translate(-50%,-50%); z-index:10; transition:all 0.2s; }
       `}</style>
       <div className="sg">
-        {/* TOP BAR CON LINE SCORE R-H-E NATIVO Y PERFECTO */}
+        {/* TOP BAR */}
         <div style={{gridColumn:"1/-1",background:"#0a0e1a",borderBottom:`2px solid ${K.border}`,padding:"8px 12px",display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:8}}>
-          <table style={{borderCollapse:"collapse",fontSize:11}}>
-            <thead><tr style={{color:K.muted}}>
-              <th style={{padding:"2px 8px",textAlign:"left",fontSize:9}}>EQ</th>
-              {Array.from({length: totalCols}).map((_:any,i:number)=><th key={i} style={{padding:"2px 4px",textAlign:"center",fontSize:9,color:game.inning===i+1?K.accent:K.muted}}>{i+1}</th>)}
-              <th style={{padding:"2px 6px",textAlign:"center",fontSize:9,color:K.accent}}>R</th>
-              <th style={{padding:"2px 6px",textAlign:"center",fontSize:9}}>H</th>
-              <th style={{padding:"2px 6px",textAlign:"center",fontSize:9}}>E</th>
-            </tr></thead>
-            <tbody>{[{t:aw,inn:game.awayInnings,s:game.awayScore,h:awH,e:awE},{t:hm,inn:game.homeInnings,s:game.homeScore,h:hmH,e:hmE}].map((x,i)=>(
-              <tr key={i}><td style={{padding:"3px 8px",fontWeight:800,fontSize:11,color:(i===0&&isTop)||(i===1&&!isTop)?K.accent:K.text}}>
-                <div style={{display:"flex",alignItems:"center",gap:4}}><TeamLogo team={x.t} size={14}/>{x.t?.abbr}</div></td>
-                {Array.from({length: totalCols}).map((_,j:number)=>{
-                  const r = (x.inn||[])[j];
-                  return <td key={j} style={{padding:"3px 4px",textAlign:"center",fontWeight:700,fontSize:11,color:r!==undefined&&r!==null?K.text:K.muted}}>{r!==undefined&&r!==null?r:"—"}</td>
-                })}
-                <td style={{padding:"3px 6px",textAlign:"center",fontWeight:900,fontSize:14,color:K.accent}}>{x.s}</td>
-                <td style={{padding:"3px 6px",textAlign:"center",fontWeight:700}}>{x.h}</td>
-                <td style={{padding:"3px 6px",textAlign:"center",fontWeight:700,color:K.red}}>{x.e}</td></tr>))}
-            </tbody>
-          </table>
+          {/* Aquí mantengo el marcador compacto, no el Line Score completo para no saturar el en vivo en móvil */}
+          <div style={{display:"flex", alignItems:"center", gap:16}}>
+            <button onClick={()=>nav("home")} style={{padding:"6px 12px", borderRadius:8, background:K.input, border:`1px solid ${K.border}`, color:K.text, cursor:"pointer", fontSize:11, fontWeight:700}}>← Volver</button>
+            <div style={{display:"flex", flexDirection:"column", gap:2}}>
+              <div style={{display:"flex", gap:8, alignItems:"center", fontWeight:900, fontSize:12}}><TeamLogo team={aw} size={14}/> {aw?.abbr} <span style={{color:isTop?K.accent:K.muted}}>{game.awayScore}</span></div>
+              <div style={{display:"flex", gap:8, alignItems:"center", fontWeight:900, fontSize:12}}><TeamLogo team={hm} size={14}/> {hm?.abbr} <span style={{color:!isTop?K.accent:K.muted}}>{game.homeScore}</span></div>
+            </div>
+          </div>
           
           <div style={{display:"flex",alignItems:"center",gap:16}}>
-            <div style={{textAlign:"center"}}><div style={{fontSize:9,fontWeight:700,color:K.muted}}>ENTRADA</div><div style={{fontSize:24,fontWeight:900,color:K.accent}}>{isTop?"▲":"▼"} {game.inning}°</div></div>
-            <div style={{textAlign:"center"}}><div style={{fontSize:9,fontWeight:700,color:K.muted}}>OUTS</div><div style={{display:"flex",gap:4,marginTop:3}}>{[0,1,2].map(i=><div key={i} style={{width:16,height:16,borderRadius:8,background:i<(game.outs||0)?K.red:K.border}}/>)}</div></div></div>
-          <div style={{display:"flex",alignItems:"center",gap:12}}>
-            <div style={{textAlign:"center"}}><div style={{fontSize:9,fontWeight:700,color:K.muted}}>CONTEO</div><div style={{display:"flex",gap:8,marginTop:2}}><span style={{fontSize:20,fontWeight:900,color:K.green}}>B:{count.balls||0}</span><span style={{fontSize:20,fontWeight:900,color:K.red}}>S:{count.strikes||0}</span></div></div>
-            <div style={{textAlign:"center"}}><div style={{fontSize:9,fontWeight:700,color:K.muted}}>LANZ</div><div style={{fontSize:18,fontWeight:900,color:K.blue}}>{pitcherPitchCount}</div></div>
-            <button onClick={()=>setShowPitcher(true)} style={{padding:"6px 10px",borderRadius:8,background:noPitcher?K.red:K.border,border:"none",color:noPitcher?"#fff":K.dim,fontSize:10,fontWeight:700,cursor:"pointer"}}>{noPitcher?"⚠️":"🔄"} Pitcher</button>
-            <button onClick={()=>{if(confirm("¿Seguro que deseas forzar el FINAL del juego?"))finishGame(plays);}} style={{padding:"6px 10px",borderRadius:8,background:K.red,border:"none",color:"#fff",fontSize:10,fontWeight:700,cursor:"pointer"}}>🏁 FIN</button></div></div>
+            <div style={{textAlign:"center"}}><div style={{fontSize:9,fontWeight:700,color:K.muted}}>ENTRADA</div><div style={{fontSize:20,fontWeight:900,color:K.accent}}>{isTop?"▲":"▼"} {game.inning}°</div></div>
+            <button onClick={()=>{if(confirm("¿Seguro que deseas forzar el FINAL del juego?"))finishGame(plays);}} style={{padding:"6px 10px",borderRadius:8,background:K.red,border:"none",color:"#fff",fontSize:10,fontWeight:700,cursor:"pointer"}}>🏁 FIN</button>
+          </div>
+        </div>
 
-        {/* LEFT LINEUP */}
+        {/* LEFT LINEUP (Menú Lateral Bateadores) */}
         <div style={{background:"#0d1220",borderRight:`1px solid ${K.border}`,overflow:"auto",padding:"8px 6px"}}>
           <div style={{fontSize:9,fontWeight:900,color:K.muted,textTransform:"uppercase",padding:"4px 6px",marginBottom:4}}>AL BATE: {batTm?.name}</div>
           {batLineup.map((p:any,i:number)=>{const a=i===(batIdx%batLineup.length);const s=getStats(p.id);const sd=isTop?"away":"home";return(
@@ -685,22 +700,55 @@ export function LiveGame({ data, id, nav }: any) {
                 <div style={{fontSize:9,color:K.muted}}>{p.fieldPos||p.position} · {s.summary}</div></div>
               {a&&<span style={{fontSize:12}}>🏏</span>}
               <button onClick={(e:any)=>{e.stopPropagation();setShowSub({side:sd as any,idx:i});}} style={{background:"none",border:"none",color:K.muted,cursor:"pointer",fontSize:10,padding:2}}>🔄</button></div>);})}
-          <div style={{marginTop:10,padding:8,borderRadius:10,background:K.input,borderTop:`2px solid ${noPitcher?K.red:K.blue}33`}}>
-            <div style={{fontSize:9,fontWeight:900,color:noPitcher?K.red:K.blue,textTransform:"uppercase",marginBottom:4}}>{noPitcher?"⚠️":"⚾"} LANZADOR ({pitchTm?.abbr})</div>
-            {pitcher?<div><div style={{fontWeight:800,fontSize:12}}>#{pitcher.number} {pitcher.name}</div><div style={{fontSize:9,color:K.muted,marginTop:2}}>Lanz: {pitcherPitchCount}</div></div>
-            :<button onClick={()=>setShowPitcher(true)} style={{...S.btn("danger"),padding:"6px 10px",fontSize:10,width:"100%"}}>⚠️ Asignar</button>}
-          </div></div>
+        </div>
 
-        {/* CENTER DIAMOND */}
+        {/* CENTER DIAMOND & DUELO MÓVIL */}
         <div style={{background:"#080c16",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:12}}>
           {noPitcher&&<div style={{padding:"8px 14px",borderRadius:10,background:`${K.red}22`,border:`1px solid ${K.red}`,marginBottom:12,textAlign:"center"}}><span style={{fontSize:11,fontWeight:700,color:K.red}}>⚠️ Asigna pitcher</span></div>}
           
-          <div style={{textAlign:"center",marginBottom:45}}> 
-            <div style={{fontSize:10,color:K.muted,fontWeight:700,marginBottom:4}}>DUELO</div>
-            <div style={{display:"flex",alignItems:"center",gap:10,justifyContent:"center"}}><span style={{fontWeight:900,fontSize:13,color:noPitcher?K.red:K.blue}}>{pitcher?.name||"⚠️"}</span><span style={{fontSize:10,color:K.muted}}>🆚</span><span style={{fontWeight:900,fontSize:13,color:K.accent}}>{currentBatter?.name||"?"}</span></div>
+          {/* 📱 NUEVO DUELO MÓVIL (PITCHER ARRIBA, BATEADOR ABAJO, CONTEO DERECHA) */}
+          <div style={{width: "100%", maxWidth: 360, ...S.card, padding: "12px", marginBottom: 16, display: "flex", alignItems: "stretch", gap: 10, background: K.input, border: `1px solid ${K.border}`}}>
+            {/* Lado Izquierdo: Jugadores */}
+            <div style={{flex: 1, display: "flex", flexDirection: "column", gap: 12}}>
+              {/* Pitcher */}
+              <div style={{display: "flex", alignItems: "center", gap: 10}}>
+                <div style={{width:36, height:36, borderRadius:18, background:`${K.blue}22`, border:`2px solid ${K.blue}88`, display:"flex", alignItems:"center", justifyContent:"center"}}><span style={{fontSize:14}}>⚾</span></div>
+                <div>
+                  <div style={{fontSize:9, fontWeight:800, color:K.blue}}>LANZADOR</div>
+                  <div style={{fontSize:13, fontWeight:900, color:K.text, lineHeight:1.2}}>{pitcher?.name || "⚠️ Sin Asignar"}</div>
+                  <div style={{fontSize:10, color:K.muted}}>{pitcherPitchCount} Lanzamientos</div>
+                </div>
+              </div>
+              {/* Bateador */}
+              <div style={{display: "flex", alignItems: "center", gap: 10}}>
+                <div style={{width:36, height:36, borderRadius:18, background:`${K.accent}22`, border:`2px solid ${K.accent}88`, display:"flex", alignItems:"center", justifyContent:"center"}}><span style={{fontSize:14}}>🏏</span></div>
+                <div>
+                  <div style={{fontSize:9, fontWeight:800, color:K.accent}}>BATEADOR</div>
+                  <div style={{fontSize:13, fontWeight:900, color:K.text, lineHeight:1.2}}>#{currentBatter?.number} {currentBatter?.name || "..."}</div>
+                  <div style={{fontSize:10, color:K.muted}}>{currentBatter ? getStats(currentBatter.id).summary : ""}</div>
+                </div>
+              </div>
+            </div>
+
+            {/* Lado Derecho: Conteo */}
+            <div style={{width: 70, borderLeft: `1px solid ${K.border}66`, paddingLeft: 10, display: "flex", flexDirection: "column", justifyContent: "center", gap: 8}}>
+              <div style={{display:"flex", alignItems:"center", justifyContent:"space-between"}}>
+                <span style={{fontSize:13, fontWeight:900, color:K.green}}>B</span>
+                <div style={{display:"flex", gap:3}}>{[0,1,2,3].map(i=><div key={i} style={{width:8,height:8,borderRadius:4,background:i<(count.balls||0)?K.green:K.border}}/>)}</div>
+              </div>
+              <div style={{display:"flex", alignItems:"center", justifyContent:"space-between"}}>
+                <span style={{fontSize:13, fontWeight:900, color:K.red}}>S</span>
+                <div style={{display:"flex", gap:3}}>{[0,1,2].map(i=><div key={i} style={{width:8,height:8,borderRadius:4,background:i<(count.strikes||0)?K.red:K.border}}/>)}</div>
+              </div>
+              <div style={{display:"flex", alignItems:"center", justifyContent:"space-between", marginTop:4, paddingTop:4, borderTop:`1px solid ${K.border}44`}}>
+                <span style={{fontSize:10, fontWeight:900, color:K.dim}}>OUT</span>
+                <div style={{display:"flex", gap:3}}>{[0,1,2].map(i=><div key={i} style={{width:8,height:8,borderRadius:4,background:i<(game.outs||0)?K.red:K.border}}/>)}</div>
+              </div>
+            </div>
           </div>
+          {/* FIN NUEVO DUELO MÓVIL */}
           
-          <div style={{position:"relative",width:180,height:180, marginTop:15, marginBottom:20}}>
+          <div style={{position:"relative",width:180,height:180, marginTop:5, marginBottom:20}}>
             <svg width={180} height={180} viewBox="0 0 180 180"><polygon points="90,15 165,90 90,165 15,90" fill="none" stroke={K.border} strokeWidth="2"/><line x1="90" y1="165" x2="165" y2="90" stroke={K.border} strokeWidth="1" opacity=".3"/><line x1="90" y1="165" x2="15" y2="90" stroke={K.border} strokeWidth="1" opacity=".3"/></svg>
             
             {/* DEFENSIVOS */}
@@ -839,20 +887,29 @@ export function LiveGame({ data, id, nav }: any) {
               <div style={{fontSize:20,marginBottom:2}}>{a.i}</div>{a.l}{a.d&&<div style={{fontSize:8,color:K.muted,marginTop:2}}>{a.d}</div>}</button>)}</div></Modal>}
 
       {showPitcher&&<Modal title={`Lanzador (${pitchTm?.name})`} onClose={()=>setShowPitcher(false)}>
-        {pitchLineup.map((p:any)=>{const ps=getPitStats(p.id);return(
-          <button key={p.id} onClick={async()=>{await up({currentPitcher:{id:p.id,name:p.name,number:p.number}});setShowPitcher(false);}}
-            style={{display:"flex",alignItems:"center",gap:8,padding:"10px 12px",borderRadius:10,border:`2px solid ${pitcher?.id===p.id?K.accent:K.border}`,background:pitcher?.id===p.id?`${K.accent}11`:K.input,cursor:"pointer",textAlign:"left",width:"100%",marginBottom:6}}>
-            <span style={{fontWeight:800,fontSize:12,color:K.muted}}>#{p.number}</span>
-            <div style={{flex:1}}><div style={{fontWeight:700,fontSize:14}}>{p.name}</div>{ps.pitches>0&&<div style={{fontSize:9,color:K.muted}}>IP:{ps.ip} K:{ps.K} H:{ps.h} BB:{ps.bb} CL:{ps.cl}</div>}</div>
-            {pitcher?.id===p.id&&<span style={S.badge(K.accent)}>Actual</span>}</button>)})}</Modal>}
+        <div style={{padding:"0 0 10px 0"}}>
+          <div style={{fontSize:10, color:K.muted, marginBottom:8}}>Selecciona al pitcher relevista o abridor:</div>
+          <div style={{maxHeight:"60vh", overflowY:"auto"}}>
+            {pitchLineup.map((p:any)=>{const ps=getPitStats(p.id);return(
+              <button key={p.id} onClick={async()=>{await up({currentPitcher:{id:p.id,name:p.name,number:p.number}});setShowPitcher(false);}}
+                style={{display:"flex",alignItems:"center",gap:8,padding:"10px 12px",borderRadius:10,border:`2px solid ${pitcher?.id===p.id?K.accent:K.border}`,background:pitcher?.id===p.id?`${K.accent}11`:K.input,cursor:"pointer",textAlign:"left",width:"100%",marginBottom:6}}>
+                <span style={{fontWeight:800,fontSize:12,color:K.muted}}>#{p.number}</span>
+                <div style={{flex:1}}><div style={{fontWeight:700,fontSize:14}}>{p.name}</div>{ps.pitches>0&&<div style={{fontSize:9,color:K.muted}}>IP:{ps.ip} K:{ps.K} H:{ps.h} BB:{ps.bb} CL:{ps.cl}</div>}</div>
+                {pitcher?.id===p.id&&<span style={S.badge(K.accent)}>Actual</span>}</button>)})}
+          </div>
+        </div>
+      </Modal>}
 
       {showSub&&<Modal title="Sustitución" onClose={()=>setShowSub(null)}>
         <div style={{marginBottom:12,padding:10,background:K.input,borderRadius:10}}>
           <div style={{fontSize:10,color:K.muted}}>SALE:</div>
           <div style={{fontWeight:800,fontSize:14,color:K.red,marginTop:2}}>#{(showSub.side==="away"?(game.awayLineup||[]):(game.homeLineup||[]))[showSub.idx]?.number} {(showSub.side==="away"?(game.awayLineup||[]):(game.homeLineup||[]))[showSub.idx]?.name}</div></div>
         <div style={{fontSize:10,color:K.muted,marginBottom:8}}>ENTRA:</div>
-        {getAvailSubs(showSub.side).map((p:any)=><button key={p.id} onClick={()=>doSub(showSub.side,showSub.idx,p)} style={{display:"flex",alignItems:"center",gap:8,padding:"10px 12px",borderRadius:10,border:`2px solid ${K.border}`,background:K.input,cursor:"pointer",width:"100%",marginBottom:6,textAlign:"left"}}>
-          <span style={{fontWeight:800,color:K.accent}}>#{p.number||"—"}</span><span style={{fontWeight:700,fontSize:14,flex:1}}>{p.name}</span><span style={{fontSize:10,color:K.muted}}>{p.position}</span></button>)}
+        <div style={{maxHeight:"50vh", overflowY:"auto"}}>
+          {getAvailSubs(showSub.side).map((p:any)=><button key={p.id} onClick={()=>doSub(showSub.side,showSub.idx,p)} style={{display:"flex",alignItems:"center",gap:8,padding:"10px 12px",borderRadius:10,border:`2px solid ${K.border}`,background:K.input,cursor:"pointer",width:"100%",marginBottom:6,textAlign:"left"}}>
+            <span style={{fontWeight:800,color:K.accent}}>#{p.number||"—"}</span><span style={{fontWeight:700,fontSize:14,flex:1}}>{p.name}</span><span style={{fontSize:10,color:K.muted}}>{p.position}</span></button>)}
+          {getAvailSubs(showSub.side).length === 0 && <div style={{fontSize:11, color:K.muted, textAlign:"center", padding:20}}>No quedan jugadores disponibles en la banca para sustituir.</div>}
+        </div>
       </Modal>}
 
     </div>
@@ -1030,8 +1087,10 @@ export function WatchGame({ data, id, nav }: any) {
 
   const fullBat = currBat_W ? data.players.find((p:any) => p.id === currBat_W.id) : null;
   const fullPit = pitch_W ? data.players.find((p:any) => p.id === pitch_W.id) : null;
+
   const cBatStats = currBat_W ? getStats(currBat_W.id) : null;
   const cPitStats = pitch_W ? getPitStats(pitch_W.id) : null;
+
   // Render variables para Line Score (R-H-E)
   const awH = game.awayHits || 0;
   const hmH = game.homeHits || 0;
@@ -1083,8 +1142,9 @@ export function WatchGame({ data, id, nav }: any) {
       {/* ── PANEL DUELO ULTRALIMPIO ESTILO ESPN ── */}
       {game.status !== "final" && (
         <div style={{...S.card, padding:"16px 20px", marginBottom:16, border:`1px solid ${K.border}`}}>
-          <div style={{display:"flex", alignItems:"center", justifyContent:"center", gap:20}}>
-            <div style={{display:"flex", alignItems:"center", gap:12, flex:1, justifyContent:"flex-end"}}>
+          <div style={{display:"flex", alignItems:"center", justifyContent:"center", gap:20, flexWrap:"wrap"}}>
+            {/* Lanzador */}
+            <div style={{display:"flex", alignItems:"center", gap:12, flex:1, justifyContent:"flex-end", minWidth:150}}>
               <div style={{textAlign:"right"}}>
                 <div style={{fontSize:10, fontWeight:700, color:K.muted}}>LANZADOR</div>
                 <div style={{fontWeight:900, fontSize:14, color:K.blue}}>#{pitch_W?.number} {pitch_W?.name}</div>
@@ -1101,6 +1161,7 @@ export function WatchGame({ data, id, nav }: any) {
               </div>
             </div>
             
+            {/* Conteo central */}
             <div style={{textAlign:"center", minWidth:120, borderLeft:`1px solid ${K.border}66`, borderRight:`1px solid ${K.border}66`, padding:"0 20px"}}>
               <div style={{display:"flex", justifyContent:"center", alignItems:"center", gap:4}}>
                 <div style={{fontSize:16, fontWeight:900, color:K.green, width:18, textAlign:"right"}}>B:</div>
@@ -1114,9 +1175,16 @@ export function WatchGame({ data, id, nav }: any) {
                   {[0,1,2].map(i=><div key={i} style={{width:12, height:12, borderRadius:6, background:i<(game.count?.strikes||0)?K.red:K.border}}/>)}
                 </div>
               </div>
+              <div style={{display:"flex", justifyContent:"center", alignItems:"center", gap:4, marginTop:8, paddingTop:8, borderTop:`1px solid ${K.border}44`}}>
+                <div style={{fontSize:11, fontWeight:900, color:K.dim, width:26, textAlign:"right", paddingRight:4}}>OUT:</div>
+                <div style={{display:"flex", gap:4}}>
+                  {[0,1,2].map(i=><div key={i} style={{width:12, height:12, borderRadius:6, background:i<(game.outs||0)?K.red:K.border}}/>)}
+                </div>
+              </div>
             </div>
             
-            <div style={{display:"flex", alignItems:"center", gap:12, flex:1, justifyContent:"flex-start"}}>
+            {/* Bateador */}
+            <div style={{display:"flex", alignItems:"center", gap:12, flex:1, justifyContent:"flex-start", minWidth:150}}>
               <div style={{width:46, height:46, borderRadius:23, background:`${K.accent}15`, border:`2px solid ${K.accent}55`, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0, overflow:"hidden"}}>
                 {(fullBat?.photo || fullBat?.photoUrl) ? (
                   <img src={fullBat.photo || fullBat.photoUrl} alt="Bateador" style={{width:"100%", height:"100%", objectFit:"cover"}} />

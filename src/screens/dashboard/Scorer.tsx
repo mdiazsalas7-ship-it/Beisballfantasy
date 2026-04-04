@@ -107,6 +107,7 @@ function PreGameSetup({ game, data, up, nav }: any) {
       homeStartingPitcher: hmLu.find(p=>p.fieldPos==="P(1)"),
       currentPitcher: hmLu.find(p=>p.fieldPos==="P(1)"),
       awayScore:0, homeScore:0, awayInnings:[], homeInnings:[],
+      awayHits:0, homeHits:0, awayErrors:0, homeErrors:0, awayE:0, homeE:0,
       inning:1, half:"top", outs:0, bases:[null,null,null], count:{balls:0,strikes:0}, plays:[],
       awayBatterIdx: 0, homeBatterIdx: 0
     });
@@ -182,12 +183,9 @@ export function LiveGame({ data, id, nav }: any) {
   const [showSub,setShowSub] = useState<{side:"away"|"home",idx:number}|null>(null);
   const [showConfirm,setShowConfirm] = useState<any>(null);
   const [showRunnerAction,setShowRunnerAction] = useState<{type:"SB"|"CS"|"PK"}|null>(null);
-  const [showAssignRun, setShowAssignRun] = useState(false);
-  const [addTeamRun, setAddTeamRun] = useState(false);
 
   const [showBatazo, setShowBatazo] = useState(false);
   const [fieldRoute, setFieldRoute] = useState<number[]>([]);
-  const [fcRunnerSelect, setFcRunnerSelect] = useState(false);
 
   useEffect(() => { const u = F.onDoc("games", id!, setGame); return () => u && u(); }, [id]);
 
@@ -207,7 +205,20 @@ export function LiveGame({ data, id, nav }: any) {
   const pitcher = game.currentPitcher || null;
   const count = game.count || { balls: 0, strikes: 0 };
   const plays = game.plays || [];
-  const up = async (u:any) => await F.set("games",id!,u);
+  
+  const up = async (u:any) => {
+    const np = u.plays || plays;
+    if (np && np.length > 0) {
+      u.awayHits = np.filter((p:any)=>p.team==="away"&&["1B","2B","3B","HR"].includes(p.result)).length;
+      u.homeHits = np.filter((p:any)=>p.team==="home"&&["1B","2B","3B","HR"].includes(p.result)).length;
+      u.awayErrors = np.filter((p:any)=>p.result==="E"&&p.team==="home").length;
+      u.homeErrors = np.filter((p:any)=>p.result==="E"&&p.team==="away").length;
+      u.awayE = u.awayErrors; 
+      u.homeE = u.homeErrors;
+    }
+    await F.set("games",id!,u);
+  };
+  
   const noPitcher = !pitcher;
 
   const batIdx = isTop ? (game.awayBatterIdx||0) : (game.homeBatterIdx||0);
@@ -273,13 +284,11 @@ export function LiveGame({ data, id, nav }: any) {
   const resetCount = () => ({balls:0,strikes:0});
   const nextBatter = () => batLineup.length===0 ? batIdx : (batIdx+1)%batLineup.length;
   
-  // ── 🛠 CORRECCIÓN CRÍTICA DE FIREBASE (SPARSE ARRAYS) ──
   const scoreRuns = (runs:number) => { 
     if(runs<=0) return {}; 
     const k=isTop?"awayScore":"homeScore"; 
     const ik=isTop?"awayInnings":"homeInnings"; 
     const ni=[...(game[ik]||[])]; 
-    // Rellenamos cualquier "hueco" anterior con ceros para que Firebase no rechace el array
     for(let i=0; i<game.inning; i++) { if(ni[i] == null) ni[i] = 0; }
     ni[game.inning-1] = ni[game.inning-1] + runs; 
     return {[k]:(game[k]||0)+runs,[ik]:ni}; 
@@ -289,7 +298,6 @@ export function LiveGame({ data, id, nav }: any) {
     u.outs=0; u.bases=[null,null,null]; u.count=resetCount();
     if(isTop) {
       u.half="bottom";
-      // Preservamos las carreras que ya se pudieron haber metido en 'u' y rellenamos huecos
       const ai=[...(u.awayInnings || game.awayInnings || [])]; 
       for(let i=0; i<game.inning; i++) { if(ai[i] == null) ai[i]=0; }
       u.awayInnings=ai;
@@ -353,16 +361,46 @@ export function LiveGame({ data, id, nav }: any) {
     setShowConfirm({type,suggestedRuns:runnersScored.length,runs:runnersScored.length,newBases,runnersScored,ca:type==="HR"?1:0, extra: type==="E" ? {isEarned:false} : {}});
   };
   
+  // ── 🛠 CORRECCIÓN TOTAL Y UNIVERSAL DEL MANEJADOR DE JUGADAS ──
   const confirmHit = async () => {
-    if(!showConfirm) return; 
-    if (showConfirm.type === "E" && !showConfirm.extra?.errorPlayerId) return alert("Por favor, selecciona quién cometió el error.");
-    
-    const{type,runs,newBases,runnersScored}=showConfirm;
-    const play=makePlay(type,{ci:runs,ca:type==="HR"?1:0, ...(showConfirm.extra||{})});
-    const runPlays = (runnersScored || []).filter((r:any) => r.id !== currentBatter?.id).slice(0, runs).map((r:any) => ({...makePlay("RUN", {ca:1, isPitch:false}), playerId: r.id, playerName: r.name}));
-    const u = {plays:[...plays, play, ...runPlays],bases:newBases,count:resetCount(),[batIdxKey]:nextBatter(),...scoreRuns(runs)};
-    await processPlayAndCheckGameOver(u, 0);
-    setShowConfirm(null);
+    try {
+      if(!showConfirm) return; 
+      if (showConfirm.type === "E" && !showConfirm.extra?.errorPlayerId) return alert("Por favor, selecciona quién cometió el error.");
+      
+      const { type, runs, newBases, runnersScored } = showConfirm;
+      
+      // En DP y Errores convencionalmente no hay RBI, a menos que el anotador lo fuerce (pero por defecto 0)
+      let rbi = (type === "DP" || type === "E") ? 0 : runs;
+      
+      const play = makePlay(type, { ci: rbi, ca: type === "HR" ? 1 : 0, ...(showConfirm.extra || {}) });
+      
+      let realRunners = [...(runnersScored || [])];
+      if (realRunners.length < runs) {
+         for(let i=realRunners.length; i<runs; i++) realRunners.push({id:"ghost", name:"Corredor"});
+      }
+      
+      const runPlays = realRunners.slice(0, runs)
+         .filter((r:any) => r && r.id !== currentBatter?.id)
+         .map((r:any) => ({...makePlay("RUN", {ca:1, isPitch:false}), playerId: r.id, playerName: r.name}));
+      
+      let outsToAdd = 0;
+      if (["GROUND", "FLY", "FC", "SAC"].includes(type)) outsToAdd = 1;
+      else if (type === "DP") outsToAdd = 2;
+
+      const u: any = {
+         plays: [...plays, play, ...runPlays],
+         bases: newBases,
+         count: resetCount(),
+         [batIdxKey]: nextBatter(),
+         ...scoreRuns(runs)
+      };
+      
+      await processPlayAndCheckGameOver(u, outsToAdd);
+      setShowConfirm(null);
+    } catch (err) {
+      console.error("Error crítico guardando jugada:", err);
+      alert("Ocurrió un error guardando la jugada. Revisa tu conexión.");
+    }
   };
 
   const addBall = async (isIBB:boolean = false) => {
@@ -400,31 +438,48 @@ export function LiveGame({ data, id, nav }: any) {
     else setFieldRoute([...fieldRoute, num]);
   };
 
-  const executeFielding = async (type: "OUT" | "FLY" | "DP" | "FC" | "ERROR") => {
-    if(type === "FC") { setFcRunnerSelect(true); return; }
-    if(type === "ERROR") { 
-      const errPos = fieldRoute[fieldRoute.length-1] || 6;
-      const defPlayer = pitchLineup.find((p:any) => p.fieldPos.includes(`(${errPos})`));
-      const{newBases,runnersScored}=advanceBases(bases,"E", batterObj); setShowBatazo(false);
-      setShowConfirm({type:"E",suggestedRuns:runnersScored.length,runs:runnersScored.length,newBases,runnersScored,ca:0,extra:{route:fieldRoute, errorPosition:errPos, errorPlayerId:defPlayer?.id, errorPlayerName:defPlayer?.name, isEarned:false}});
-      return; 
+  // ── 🧠 TODAS LAS JUGADAS DEL CUADRO SE VAN AL EDITOR VISUAL ──
+  const executeFielding = async (type: "OUT" | "FLY" | "DP" | "FC" | "ERROR" | "SAC") => {
+    const realType = type === "OUT" ? "GROUND" : type;
+    const lastPos = fieldRoute[fieldRoute.length-1] || 6;
+    const defPlayer = pitchLineup.find((p:any) => p.fieldPos.includes(`(${lastPos})`));
+    
+    let initialBases = [...bases];
+    let rScored: any[] = [];
+    let cRuns = 0;
+    
+    // Auto-predicciones según la jugada
+    if (realType === "ERROR") {
+       const adv = advanceBases(bases,"E", batterObj); 
+       initialBases = adv.newBases; 
+       rScored = adv.runnersScored; 
+       cRuns = rScored.length;
+    } else if (realType === "FC") {
+       // Bateador llega a primera. El usuario decidirá a quién sacar borrándolo de base.
+       initialBases[0] = batterObj; 
+    } else if (realType === "DP") {
+       // Adivina el corredor más obvio forzado y lo borra (el usuario puede corregir)
+       if (initialBases[0]) initialBases[0] = null;
+       else if (initialBases[1]) initialBases[1] = null;
+       else if (initialBases[2]) initialBases[2] = null;
+    }
+    // GROUND, FLY, SAC dejan las bases como están para que el usuario avance manualmente a los vivos.
+
+    const extraData: any = { route: fieldRoute };
+    if (realType === "ERROR") {
+      extraData.errorPosition = lastPos;
+      extraData.errorPlayerId = defPlayer?.id || null;
+      extraData.errorPlayerName = defPlayer?.name || null;
+      extraData.isEarned = false;
+    } else if (realType === "SAC") {
+      extraData.isSacrifice = true;
     }
 
-    const numOuts = type==="DP"?2:1; 
-    let nb=[...bases]; if(type==="DP"){if(nb[0])nb[0]=null;else if(nb[1])nb[1]=null;else if(nb[2])nb[2]=null;}
-    
-    const play = makePlay(type==="OUT"?"GROUND":type, {route: fieldRoute}); 
-    const np=[...plays,play]; const u:any={plays:np,count:resetCount(),[batIdxKey]:nextBatter(),bases:nb};
-    await processPlayAndCheckGameOver(u, numOuts);
-    setShowBatazo(false); setFieldRoute([]);
-  };
-
-  const executeFC = async (baseIdxOut: number) => {
-    const nb = [...bases]; nb[baseIdxOut] = null; nb[0] = batterObj; 
-    const play = makePlay("FC", {route: fieldRoute});
-    const np=[...plays,play]; const u:any={plays:np,count:resetCount(),[batIdxKey]:nextBatter(),bases:nb};
-    await processPlayAndCheckGameOver(u, 1);
-    setShowBatazo(false); setFieldRoute([]); setFcRunnerSelect(false);
+    setShowBatazo(false);
+    setShowConfirm({
+      type: realType, suggestedRuns: cRuns, runs: cRuns, newBases: initialBases, runnersScored: rScored, ca: 0,
+      extra: extraData
+    });
   };
 
   const executeRunnerAction = async (type:"SB"|"CS"|"PK", baseIdx:number, runner:any) => {
@@ -451,11 +506,6 @@ export function LiveGame({ data, id, nav }: any) {
       const runPlays = runnersScored.map((r:any) => ({...makePlay("RUN", {ca:1, isPitch:false}), playerId: r.id, playerName: r.name}));
       const u = {plays:[...plays,makePlay("HBP",{ci:runnersScored.length}), ...runPlays],bases:newBases,count:resetCount(),[batIdxKey]:nextBatter(),...scoreRuns(runnersScored.length)};
       await processPlayAndCheckGameOver(u, 0);
-    } else if(type==="SAC"){ const{newBases,runnersScored}=advanceAllRunners(bases);
-      const runPlays = runnersScored.map((r:any) => ({...makePlay("RUN", {ca:1, isPitch:false}), playerId: r.id, playerName: r.name}));
-      const np=[...plays,makePlay("SAC",{ci:runnersScored.length,isSacrifice:true}), ...runPlays]; 
-      const u:any={plays:np,bases:newBases,count:resetCount(),[batIdxKey]:nextBatter(),...scoreRuns(runnersScored.length)};
-      await processPlayAndCheckGameOver(u, 1);
     } else if(type==="SB"||type==="CS"||type==="PK"){ 
       const rOn=bases.map((b:any,i:number)=>({idx:i,runner:b})).filter((r:any)=>r.runner !== null);
       if(rOn.length===0){setShowComplex(false);return;}
@@ -557,16 +607,32 @@ export function LiveGame({ data, id, nav }: any) {
   };
 
   const rp=[...plays].filter((p:any)=>p.result).reverse().slice(0,6);
-  const awH=plays.filter((p:any)=>p.team==="away"&&["1B","2B","3B","HR"].includes(p.result)).length;
-  const hmH=plays.filter((p:any)=>p.team==="home"&&["1B","2B","3B","HR"].includes(p.result)).length;
-  const awE=plays.filter((p:any)=>p.result==="E"&&p.team==="home").length; 
-  const hmE=plays.filter((p:any)=>p.result==="E"&&p.team==="away").length; 
+  const awH=game.awayHits || 0;
+  const hmH=game.homeHits || 0;
+  const awE=game.awayErrors || game.awayE || 0; 
+  const hmE=game.homeErrors || game.homeE || 0; 
 
   const Btn=({label,icon,color,bg,onClick,size="md",disabled=false}:any)=>(
     <button onClick={onClick} disabled={disabled} style={{padding:size==="lg"?"8px 4px":"6px 4px",borderRadius:10,border:`2px solid ${color}44`,background:bg||`${color}15`,color:disabled?K.muted:color,fontWeight:900,fontSize:size==="lg"?12:10,cursor:disabled?"not-allowed":"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:1,width:"100%",minHeight:size==="lg"?46:36,opacity:disabled?.4:1}}>
       <span style={{fontSize:size==="lg"?16:14}}>{icon}</span><span>{label}</span></button>);
       
   const totalCols = Math.max(game.totalInnings||9, Math.max((game.awayInnings||[]).length, (game.homeInnings||[]).length));
+
+  // Textos y Logos para el Universal Base Editor
+  const modalTitles:any = {
+    "1B":"Confirmar Sencillo", "2B":"Confirmar Doble", "3B":"Confirmar Triple", "HR":"Confirmar Jonrón",
+    "E":"Confirmar Error", "SAC":"Confirmar Sacrificio", "GROUND":"Confirmar Rodado (Out)",
+    "FLY":"Confirmar Elevado", "DP":"Confirmar Doble Play", "FC":"Confirmar Jugada Selección"
+  };
+  const modalIcons:any = { "1B":"🏏","2B":"✌️","3B":"🔱","HR":"💥","E":"🫣","SAC":"🎯", "GROUND":"⬇️", "FLY":"🔼", "DP":"✖️", "FC":"⚖️" };
+  const modalDescs:any = {
+    "GROUND": "Bateador es OUT (1 Out). Toca las bases para colocar dónde quedaron los corredores (si avanzaron).",
+    "FLY": "Bateador es OUT (1 Out). Mueve los corredores si hicieron pisa y corre.",
+    "DP": "2 Outs. Bateador es OUT. Retira de base al otro corredor tocando su base.",
+    "FC": "Jugada Selección (1 Out). Bateador se embasó. Retira al corredor forzado tocando su base.",
+    "SAC": "Bateador es OUT (1 Out). Mueve a los corredores libremente.",
+    "E": "Bateador embasado. Ajusta las bases a donde llegaron tras el error."
+  };
 
   return (
     <div style={{background:K.bg,color:K.text,fontFamily:"'Outfit',system-ui,sans-serif",minHeight:"100vh",display:"flex",flexDirection:"column"}}>
@@ -659,7 +725,7 @@ export function LiveGame({ data, id, nav }: any) {
               <Btn label="2B" icon="✌️" color="#14b8a6" onClick={()=>prepareHit("2B")} size="lg" disabled={noPitcher}/>
               <Btn label="3B" icon="🔱" color="#6366f1" onClick={()=>prepareHit("3B")} size="lg" disabled={noPitcher}/>
               <Btn label="HR" icon="💥" color={K.red} bg={`${K.red}22`} onClick={()=>prepareHit("HR")} size="lg" disabled={noPitcher}/>
-              <Btn label="ERROR" icon="🫣" color="#f97316" onClick={()=>prepareHit("E")} size="lg" disabled={noPitcher}/>
+              <Btn label="ERROR" icon="🫣" color="#f97316" onClick={()=>executeFielding("ERROR")} size="lg" disabled={noPitcher}/>
             </div></div>
           <div><div style={{fontSize:9,fontWeight:900,color:K.muted,marginBottom:4,paddingLeft:4}}>OUTS DE BATAZO</div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:5}}>
@@ -668,13 +734,7 @@ export function LiveGame({ data, id, nav }: any) {
               </div></div>
           <div style={{display:"grid",gridTemplateColumns:"1fr",gap:5}}>
             <button onClick={()=>{if(noPitcher){setShowPitcher(true);return;}setShowComplex(true);}} style={{padding:"8px 6px",borderRadius:10,border:`2px solid ${K.purple}44`,background:`${K.purple}15`,color:K.purple,fontWeight:900,fontSize:11,cursor:"pointer",textAlign:"center",minHeight:36}}>⚙️ MENÚ JUGADA COMPLEJA (Robos, Balks...)</button></div>
-          <div><div style={{fontSize:9,fontWeight:900,color:K.muted,marginBottom:4,paddingLeft:4}}>+ CARRERAS EQUIPO / JUGADOR</div>
-            <div style={{display:"flex",gap:4}}>
-              <button onClick={()=>setShowAssignRun(true)} style={{flex:1,padding:"8px 4px",borderRadius:8,border:`1px solid ${K.accent}`,background:`${K.accent}22`,color:K.accent,fontWeight:900,fontSize:11,cursor:"pointer"}} title="Anotar a un jugador">🏃 +CA</button>
-              {[1,2,3].map(n=><button key={n} onClick={async()=>{
-                const u = scoreRuns(n);
-                await processPlayAndCheckGameOver(u, 0);
-              }} style={{flex:1,padding:"8px 4px",borderRadius:8,border:`1px solid ${K.accent}44`,background:K.input,color:K.accent,fontWeight:900,fontSize:13,cursor:"pointer"}} title="Anotar al equipo">+{n}</button>)}</div></div></div>
+        </div>
 
         {/* BOTTOM LOG */}
         <div style={{gridColumn:"1/-1",background:"#0a0e1a",borderTop:`2px solid ${K.border}`,padding:"6px 12px",display:"flex",alignItems:"center",gap:10}}>
@@ -690,75 +750,62 @@ export function LiveGame({ data, id, nav }: any) {
           <button onClick={()=>setShowTraditional(!showTraditional)} style={{padding:"8px 14px",borderRadius:10,background:K.border,border:"none",color:K.dim,fontWeight:700,fontSize:10,cursor:"pointer",flexShrink:0}}>📋 Hoja</button></div>
       </div>
 
-      {/* ── MODAL DEL TRAZADOR VISUAL DE OUTS ── */}
+      {/* ── MODAL DEL TRAZADOR VISUAL DE BATAZOS / OUTS ── */}
       {showBatazo && <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.85)",zIndex:100,display:"flex",alignItems:"center",justifyContent:"center"}}>
         <div style={{...S.card, padding:20, maxWidth:380, width:"90%", textAlign:"center", position:"relative"}}>
           <button onClick={()=>setShowBatazo(false)} style={{position:"absolute",top:10,right:10,background:"none",border:"none",color:K.muted,fontSize:20,cursor:"pointer"}}>✕</button>
           
-          {!fcRunnerSelect ? (
-            <>
-              <h3 style={{fontWeight:900,fontSize:18,marginBottom:4}}>Trazar Jugada (Ruta)</h3>
-              <p style={{fontSize:12,color:K.muted,marginBottom:20}}>Toca en orden a los jugadores que participaron en el fildeo/tiro.</p>
-              
-              <div style={{position:"relative", width:240, height:240, margin:"0 auto 20px"}}>
-                <svg width={240} height={240} style={{position:"absolute",inset:0}}>
-                  <polygon points="120,40 200,120 120,200 40,120" fill="none" stroke={K.border} strokeWidth="2"/>
-                  {fieldRoute.length > 1 && fieldRoute.map((node, i) => {
-                    if(i===0) return null;
-                    const prev = POS_COORDS[fieldRoute[i-1]]; const curr = POS_COORDS[node];
-                    return <line key={i} x1={prev.x+20} y1={prev.y+40} x2={curr.x+20} y2={curr.y+40} stroke={K.accent} strokeWidth="3" strokeDasharray="4"/>
-                  })}
-                </svg>
-                
-                {[1,2,3,4,5,6,7,8,9].map(num => {
-                  const isActive = fieldRoute.includes(num);
-                  const stepNum = fieldRoute.indexOf(num) + 1;
-                  return (
-                    <div key={num} onClick={()=>toggleRouteNode(num)} className="node-btn"
-                         style={{left:POS_COORDS[num].x+20, top:POS_COORDS[num].y+40, 
-                                 background: isActive ? K.accent : K.card, 
-                                 border: `2px solid ${isActive?K.accent:K.muted}`, color:isActive?"#000":K.text}}>
-                      {isActive ? stepNum : num}
-                    </div>
-                  )
-                })}
-              </div>
-              
-              <div style={{fontSize:24, fontWeight:900, color:K.accent, letterSpacing:4, minHeight:34, marginBottom:16}}>
-                {fieldRoute.length > 0 ? fieldRoute.join(" - ") : "..."}
-              </div>
+          <h3 style={{fontWeight:900,fontSize:18,marginBottom:4}}>Trazar Jugada (Ruta)</h3>
+          <p style={{fontSize:12,color:K.muted,marginBottom:20}}>Toca en orden a los jugadores que participaron en el fildeo/tiro.</p>
+          
+          <div style={{position:"relative", width:240, height:240, margin:"0 auto 20px"}}>
+            <svg width={240} height={240} style={{position:"absolute",inset:0}}>
+              <polygon points="120,40 200,120 120,200 40,120" fill="none" stroke={K.border} strokeWidth="2"/>
+              {fieldRoute.length > 1 && fieldRoute.map((node, i) => {
+                if(i===0) return null;
+                const prev = POS_COORDS[fieldRoute[i-1]]; const curr = POS_COORDS[node];
+                return <line key={i} x1={prev.x+20} y1={prev.y+40} x2={curr.x+20} y2={curr.y+40} stroke={K.accent} strokeWidth="3" strokeDasharray="4"/>
+              })}
+            </svg>
+            
+            {[1,2,3,4,5,6,7,8,9].map(num => {
+              const isActive = fieldRoute.includes(num);
+              const stepNum = fieldRoute.indexOf(num) + 1;
+              return (
+                <div key={num} onClick={()=>toggleRouteNode(num)} className="node-btn"
+                     style={{left:POS_COORDS[num].x+20, top:POS_COORDS[num].y+40, 
+                             background: isActive ? K.accent : K.card, 
+                             border: `2px solid ${isActive?K.accent:K.muted}`, color:isActive?"#000":K.text}}>
+                  {isActive ? stepNum : num}
+                </div>
+              )
+            })}
+          </div>
+          
+          <div style={{fontSize:24, fontWeight:900, color:K.accent, letterSpacing:4, minHeight:34, marginBottom:16}}>
+            {fieldRoute.length > 0 ? fieldRoute.join(" - ") : "..."}
+          </div>
 
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
-                <button onClick={()=>executeFielding("OUT")} disabled={fieldRoute.length===0} style={{...S.btn("primary"), opacity:fieldRoute.length?1:0.5}}>⬇️ Rodado (Out)</button>
-                <button onClick={()=>executeFielding("FLY")} disabled={fieldRoute.length===0} style={{...S.btn("ghost"), border:`1px solid ${K.border}`, opacity:fieldRoute.length?1:0.5}}>🔼 Elevado (Fly)</button>
-                <button onClick={()=>executeFielding("DP")} disabled={fieldRoute.length<2} style={{...S.btn("danger"), background:`${K.red}22`, opacity:fieldRoute.length>1?1:0.5}}>✖️✖️ Doble Play</button>
-                <button onClick={()=>executeFielding("FC")} disabled={fieldRoute.length===0} style={{...S.btn("ghost"), border:`1px solid ${K.blue}44`, color:K.blue, opacity:fieldRoute.length?1:0.5}}>⚖️ Jugada Selección (FC)</button>
-                <button onClick={()=>executeFielding("ERROR")} disabled={fieldRoute.length===0} style={{gridColumn:"1/-1", padding:12, borderRadius:8, background:"#f9731622", border:"1px solid #f97316", color:"#f97316", fontWeight:900, cursor:"pointer", opacity:fieldRoute.length?1:0.5}}>🫣 ERROR Defensivo</button>
-              </div>
-            </>
-          ) : (
-            <>
-              <h3 style={{fontWeight:900,fontSize:18,marginBottom:4}}>⚖️ Jugada de Selección (FC)</h3>
-              <p style={{fontSize:12,color:K.muted,marginBottom:20}}>El bateador se embasa. ¿Qué corredor fue puesto out?</p>
-              <div style={{display:"flex",flexDirection:"column",gap:8}}>
-                {bases.map((runner:any,i:number)=>{
-                  if(!runner) return null;
-                  return <button key={i} onClick={()=>executeFC(i)} style={{padding:16,borderRadius:10,border:`1px solid ${K.border}`,background:K.input,color:K.text,fontWeight:800,cursor:"pointer"}}>Sacar a {runner.name} (en {["1ra","2da","3ra"][i]})</button>
-                })}
-              </div>
-            </>
-          )}
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+            <button onClick={()=>executeFielding("OUT")} disabled={fieldRoute.length===0} style={{...S.btn("primary"), opacity:fieldRoute.length?1:0.5}}>⬇️ Rodado (Out)</button>
+            <button onClick={()=>executeFielding("FLY")} disabled={fieldRoute.length===0} style={{...S.btn("ghost"), border:`1px solid ${K.border}`, opacity:fieldRoute.length?1:0.5}}>🔼 Elevado (Fly)</button>
+            <button onClick={()=>executeFielding("DP")} disabled={fieldRoute.length<2} style={{...S.btn("danger"), background:`${K.red}22`, opacity:fieldRoute.length>1?1:0.5}}>✖️✖️ Doble Play</button>
+            <button onClick={()=>executeFielding("FC")} disabled={fieldRoute.length===0} style={{...S.btn("ghost"), border:`1px solid ${K.blue}44`, color:K.blue, opacity:fieldRoute.length?1:0.5}}>⚖️ Jugada Selección</button>
+            
+            <button onClick={()=>executeFielding("SAC")} disabled={fieldRoute.length===0} style={{gridColumn:"1/-1", padding:12, borderRadius:8, background:"#262626", border:"1px solid #a3a3a3", color:"#a3a3a3", fontWeight:900, cursor:"pointer", opacity:fieldRoute.length?1:0.5}}>🎯 Sacrificio (Fly / Toque)</button>
+          </div>
         </div>
       </div>}
 
-      {/* OTROS MODALS (Confirm Hit, Assign Run) */}
-      {showConfirm&&<Modal title={`Confirmar ${showConfirm.type}`} onClose={()=>setShowConfirm(null)}>
+      {/* ── EDITOR VISUAL UNIVERSAL (Hits, Errores, y ahora OUTS) ── */}
+      {showConfirm&&<Modal title={modalTitles[showConfirm.type] || `Confirmar ${showConfirm.type}`} onClose={()=>setShowConfirm(null)}>
         <div style={{display:"flex",flexDirection:"column",gap:14}}>
           <div style={{textAlign:"center",padding:10,background:K.input,borderRadius:12}}>
-            <span style={{fontSize:28}}>{{"1B":"🏏","2B":"✌️","3B":"🔱","HR":"💥","E":"🫣"}[showConfirm.type as string]}</span>
-            <div style={{fontWeight:900,fontSize:16,color:K.text,marginTop:4}}>{currentBatter?.name}</div></div>
+            <span style={{fontSize:28}}>{modalIcons[showConfirm.type] || "⚾"}</span>
+            <div style={{fontWeight:900,fontSize:16,color:K.text,marginTop:4}}>{currentBatter?.name}</div>
+            <div style={{fontSize:10, color:K.muted, marginTop:2}}>{modalDescs[showConfirm.type] || ""}</div>
+          </div>
           
-          {/* Selector de Jugador para el Error */}
           {showConfirm.type === "E" && (
             <div style={{marginTop:8, background:`${K.red}11`, padding:12, borderRadius:10, border:`1px solid ${K.red}44`}}>
               <label style={{...S.label, color:K.red}}>¿Quién cometió el error?</label>
@@ -776,23 +823,13 @@ export function LiveGame({ data, id, nav }: any) {
             </div>
           )}
 
-          <div><label style={S.label}>Carreras que anotan</label>
+          <div><label style={S.label}>Carreras que anotan en la jugada</label>
             <div style={{display:"flex",gap:6,justifyContent:"center"}}>{[0,1,2,3,4].map(n=><button key={n} onClick={()=>setShowConfirm({...showConfirm,runs:n})} style={{width:44,height:44,borderRadius:12,border:`2px solid ${showConfirm.runs===n?K.accent:K.border}`,background:showConfirm.runs===n?`${K.accent}22`:K.input,color:showConfirm.runs===n?K.accent:K.text,fontWeight:900,fontSize:18,cursor:"pointer"}}>{n}</button>)}</div></div>
-          <div><label style={S.label}>Bases (toca para ajustar)</label>
+          
+          <div><label style={S.label}>Ajuste Manual de Bases</label>
             <div style={{display:"flex",gap:12,justifyContent:"center",padding:10}}>{["1ra","2da","3ra"].map((l,i)=><button key={i} onClick={()=>{const nb=[...showConfirm.newBases];nb[i]=nb[i]?null:(bases[i]||{id:"ghost",name:"Corredor"});setShowConfirm({...showConfirm,newBases:nb});}} style={{padding:"10px 18px",borderRadius:10,border:`2px solid ${showConfirm.newBases[i]?K.yellow:K.border}`,background:showConfirm.newBases[i]?K.yellow+"22":"transparent",color:showConfirm.newBases[i]?K.yellow:K.muted,fontWeight:700,fontSize:13,cursor:"pointer"}}>{l} {showConfirm.newBases[i]?"●":"○"}</button>)}</div></div>
-          <button onClick={confirmHit} style={{...S.btn("primary"),width:"100%",padding:14,fontSize:14}}>✅ Confirmar</button></div></Modal>}
-
-      {showAssignRun && <Modal title="¿Quién anotó la carrera?" onClose={()=>setShowAssignRun(false)}>
-        <div style={{display:"flex",flexDirection:"column",gap:8}}>
-          {batLineup.map((p:any) => (
-             <button key={p.id} onClick={async()=>{
-                const play = {...makePlay("RUN",{ca:1,isPitch:false}), playerId:p.id, playerName:p.name};
-                const u = {plays:[...plays,play], ...(addTeamRun ? scoreRuns(1) : {})};
-                await processPlayAndCheckGameOver(u, 0);
-                setShowAssignRun(false); setAddTeamRun(false);
-             }} style={{padding:12,borderRadius:10,border:`1px solid ${K.border}`,background:K.input,color:K.text,fontWeight:700,fontSize:14,cursor:"pointer",textAlign:"left"}}>#{p.number} {p.name}</button>))}
-          <label style={{display:"flex", alignItems:"center", gap:8, marginTop:12}}><input type="checkbox" checked={addTeamRun} onChange={(e)=>setAddTeamRun(e.target.checked)} /><span style={{fontSize:12, color:K.muted}}>Sumar también al marcador general</span></label>
-        </div></Modal>}
+          
+          <button onClick={confirmHit} style={{...S.btn("primary"),width:"100%",padding:14,fontSize:14}}>✅ Confirmar Jugada</button></div></Modal>}
 
       {showRunnerAction&&<Modal title={showRunnerAction.type==="SB"?"🏃 ¿Quién se robó la base?":showRunnerAction.type==="PK"?"🎯 Revirada (Pickoff) a:":"🚔 ¿Quién fue atrapado?"} onClose={()=>setShowRunnerAction(null)}>
         <div style={{display:"flex",flexDirection:"column",gap:8}}>
@@ -800,7 +837,7 @@ export function LiveGame({ data, id, nav }: any) {
 
       {showComplex&&<Modal title="Jugadas Especiales y de Corredores" onClose={()=>setShowComplex(false)}>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
-          {[{k:"IBB",l:"Boleto Intencional",i:"🤫",c:K.blue,d:"No suma bolas"},{k:"HBP",l:"Golpeado",i:"😤",c:"#eab308",d:"Fuerza si full"},{k:"SAC",l:"Sacrificio",i:"🎯",c:"#a3a3a3",d:"No cuenta AB"},{k:"SB",l:"Base Robada",i:"🏃",c:"#8b5cf6",d:""},{k:"CS",l:"Atrapado",i:"🚔",c:"#dc2626",d:"1 out"},{k:"PK",l:"Pickoff (Revirada)",i:"🎯",c:"#dc2626",d:"1 out, A para Pitcher"},{k:"WP",l:"Wild Pitch",i:"🤷",c:"#64748b",d:"ER, sin RBI"},{k:"PB",l:"Passed Ball",i:"🧤",c:"#64748b",d:"UER"},{k:"BALK",l:"Balk",i:"🚫",c:"#f43f5e",d:"ER, sin RBI"}].map(a=>
+          {[{k:"IBB",l:"Boleto Intencional",i:"🤫",c:K.blue,d:"No suma bolas"},{k:"HBP",l:"Golpeado",i:"😤",c:"#eab308",d:"Fuerza si full"},{k:"SB",l:"Base Robada",i:"🏃",c:"#8b5cf6",d:""},{k:"CS",l:"Atrapado",i:"🚔",c:"#dc2626",d:"1 out"},{k:"PK",l:"Pickoff (Revirada)",i:"🎯",c:"#dc2626",d:"1 out, A para Pitcher"},{k:"WP",l:"Wild Pitch",i:"🤷",c:"#64748b",d:"ER, sin RBI"},{k:"PB",l:"Passed Ball",i:"🧤",c:"#64748b",d:"UER"},{k:"BALK",l:"Balk",i:"🚫",c:"#f43f5e",d:"ER, sin RBI"}].map(a=>
             <button key={a.k} onClick={()=>registerComplex(a.k)} style={{padding:12,borderRadius:14,border:`2px solid ${a.c}44`,background:`${a.c}15`,color:a.c,fontWeight:800,fontSize:11,cursor:"pointer",textAlign:"center"}}>
               <div style={{fontSize:20,marginBottom:2}}>{a.i}</div>{a.l}{a.d&&<div style={{fontSize:8,color:K.muted,marginTop:2}}>{a.d}</div>}</button>)}</div></Modal>}
 
@@ -884,7 +921,7 @@ const getPlayNarrative = (p: any) => {
     case "DP": return `${n} bateó para doble play${rStr}.`;
     case "E": return `${n} se embasó por error del ${POS_NAMES[p.errorPosition] || "fildeador"}.`;
     case "FC": return `${n} llegó a primera en jugada de selección.`;
-    case "SAC": return `${n} se sacrificó.`;
+    case "SAC": return `${n} se sacrificó (Fly/Toque)${rStr}.`;
     case "HBP": return `${n} fue golpeado por el lanzamiento.`;
     case "SB": return `${n} se robó la base.`;
     case "CS": return `${n} fue atrapado robando.`;

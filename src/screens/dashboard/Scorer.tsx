@@ -25,6 +25,7 @@ function advanceAllRunners(bases: any[]): { newBases: any[], runnersScored: any[
 
 const FIELD_POS = ["P(1)","C(2)","1B(3)","2B(4)","3B(5)","SS(6)","LF(7)","CF(8)","RF(9)"];
 const POS_COORDS:any = { 1:{x:90,y:105}, 2:{x:90,y:175}, 3:{x:180,y:70}, 4:{x:135,y:5}, 5:{x:0,y:70}, 6:{x:45,y:5}, 7:{x:-15,y:-35}, 8:{x:90,y:-50}, 9:{x:195,y:-35} };
+const POS_LABELS:any = { 1:"P", 2:"C", 3:"1B", 4:"2B", 5:"3B", 6:"SS", 7:"LF", 8:"CF", 9:"RF" };
 
 // Función para acortar nombres "Juan Pérez" -> "J. Pérez"
 const formatName = (n: string) => { if(!n) return "?"; const p = n.split(" "); return p.length > 1 ? `${p[0].charAt(0)}. ${p[p.length-1]}` : n; };
@@ -67,11 +68,11 @@ function PreGameSetup({ game, data, up, nav }: any) {
   const [awLu, setAwLu] = useState<any[]>(game.awayLineup || []);
   const [hmLu, setHmLu] = useState<any[]>(game.homeLineup || []);
 
-  const [umpires, setUmpires] = useState({ hp: "", bases: "" });
-  const [awStaff, setAwStaff] = useState({ manager: aw?.manager || "", coach1B: aw?.coach1B || "", coach3B: aw?.coach3B || "" });
-  const [hmStaff, setHmStaff] = useState({ manager: hm?.manager || "", coach1B: hm?.coach1B || "", coach3B: hm?.coach3B || "" });
+  const [umpires, setUmpires] = useState({ hp: "", bases: "", bases2: "", bases3: "", scorer: "" });
+  const [awStaff, setAwStaff] = useState({ manager: aw?.manager || "" });
+  const [hmStaff, setHmStaff] = useState({ manager: hm?.manager || "" });
 
-  const POS_OPTIONS = ["P(1)","C(2)","1B(3)","2B(4)","3B(5)","SS(6)","LF(7)","CF(8)","RF(9)","BD"];
+  const POS_OPTIONS = ["P(1)","C(2)","1B(3)","2B(4)","3B(5)","SS(6)","LF(7)","CF(8)","RF(9)","BD","BA"];
 
   const roster = tab === "away" ? awRoster : hmRoster;
   const lu = tab === "away" ? awLu : hmLu;
@@ -81,7 +82,7 @@ function PreGameSetup({ game, data, up, nav }: any) {
     if (lu.find(x => x.id === p.id)) {
       setLu(lu.filter(x => x.id !== p.id));
     } else {
-      if (lu.length >= 9) return alert("La alineación inicial solo puede tener 9 jugadores. El resto entra por sustitución.");
+      if (lu.length >= 10) return alert("La alineación inicial solo puede tener hasta 10 jugadores (incluyendo BD o BA).");
       const unassigned = POS_OPTIONS.find(pos => !lu.find(x=>x.fieldPos === pos)) || "P(1)";
       setLu([...lu, { id: p.id, name: p.name, number: p.number, position: p.position, fieldPos: unassigned }]);
     }
@@ -92,7 +93,17 @@ function PreGameSetup({ game, data, up, nav }: any) {
     const n = [...lu]; [n[idx], n[idx+dir]] = [n[idx+dir], n[idx]]; setLu(n);
   };
 
-  const changePos = (idx: number, pos: string) => { const n = [...lu]; n[idx].fieldPos = pos; setLu(n); };
+  const changePos = (idx: number, pos: string) => { 
+    const n = [...lu]; 
+    const oldPos = n[idx].fieldPos;
+    const otherIdx = n.findIndex((p, i) => i !== idx && p.fieldPos === pos);
+    
+    if (otherIdx !== -1) {
+      n[otherIdx].fieldPos = oldPos;
+    }
+    n[idx].fieldPos = pos; 
+    setLu(n); 
+  };
 
   const autoFill = () => {
     const needed = roster.filter((p:any) => !lu.find(x => x.id === p.id)).slice(0, Math.max(0, 9 - lu.length));
@@ -102,8 +113,8 @@ function PreGameSetup({ game, data, up, nav }: any) {
   };
 
   const start = async () => {
-    if (awLu.length !== 9) return alert(`Alineación incompleta: ${aw?.name} debe tener exactamente 9 bateadores.`);
-    if (hmLu.length !== 9) return alert(`Alineación incompleta: ${hm?.name} debe tener exactamente 9 bateadores.`);
+    if (awLu.length < 9 || awLu.length > 10) return alert(`Alineación incompleta: ${aw?.name} debe tener 9 o 10 bateadores.`);
+    if (hmLu.length < 9 || hmLu.length > 10) return alert(`Alineación incompleta: ${hm?.name} debe tener 9 o 10 bateadores.`);
     if (!awLu.find(p=>p.fieldPos==="P(1)")) return alert(`${aw?.name} necesita asignar a un Lanzador P(1).`);
     if (!hmLu.find(p=>p.fieldPos==="P(1)")) return alert(`${hm?.name} necesita asignar a un Lanzador P(1).`);
 
@@ -138,7 +149,7 @@ function PreGameSetup({ game, data, up, nav }: any) {
       <div style={{display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(300px, 1fr))", gap:16, marginBottom:24}}>
         <div style={{...S.card, padding:12}}>
           <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10}}>
-            <h3 style={{fontWeight:900, fontSize:13, color:K.text}}>Orden al Bate ({lu.length}/9)</h3>
+            <h3 style={{fontWeight:900, fontSize:13, color:K.text}}>Orden al Bate ({lu.length})</h3>
             <button onClick={autoFill} style={{fontSize:10, padding:"4px 8px", background:K.input, border:`1px solid ${K.border}`, color:K.accent, borderRadius:6, cursor:"pointer"}}>⚡ Llenado Rápido</button>
           </div>
           <div style={{maxHeight: "50vh", overflowY: "auto", paddingRight:4}}>
@@ -178,23 +189,26 @@ function PreGameSetup({ game, data, up, nav }: any) {
       </div>
 
       <div style={{...S.card, padding: 16, border:`1px solid ${K.border}`}}>
-        <h3 style={{fontWeight:900, fontSize:14, color:K.text, marginBottom:12, display:"flex", alignItems:"center", gap:6}}>📋 Cuerpo Técnico y Árbitros</h3>
+        <h3 style={{fontWeight:900, fontSize:14, color:K.text, marginBottom:12, display:"flex", alignItems:"center", gap:6}}>📋 Oficiales del Juego</h3>
         <div style={{display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(280px, 1fr))", gap:16}}>
           <div>
-            <h4 style={{fontSize:11, fontWeight:800, color:tab==="away"?K.accent:K.blue, textTransform:"uppercase", marginBottom:8}}>Staff: {tab==="away"?aw?.name:hm?.name}</h4>
+            <h4 style={{fontSize:11, fontWeight:800, color:tab==="away"?K.accent:K.blue, textTransform:"uppercase", marginBottom:8}}>Staff de Equipo</h4>
             <div style={{display:"flex", flexDirection:"column", gap:8}}>
-              <div><label style={{...S.label, fontSize:10}}>Manager (DT)</label><input style={{...S.input, padding:"6px 10px", fontSize:12}} placeholder="Nombre del Manager" value={tab==="away"?awStaff.manager:hmStaff.manager} onChange={(e)=>tab==="away"?setAwStaff({...awStaff, manager:e.target.value}):setHmStaff({...hmStaff, manager:e.target.value})} /></div>
-              <div style={{display:"flex", gap:8}}>
-                <div style={{flex:1}}><label style={{...S.label, fontSize:10}}>Coach 1B</label><input style={{...S.input, padding:"6px 10px", fontSize:12}} placeholder="Coach 1B" value={tab==="away"?awStaff.coach1B:hmStaff.coach1B} onChange={(e)=>tab==="away"?setAwStaff({...awStaff, coach1B:e.target.value}):setHmStaff({...hmStaff, coach1B:e.target.value})} /></div>
-                <div style={{flex:1}}><label style={{...S.label, fontSize:10}}>Coach 3B</label><input style={{...S.input, padding:"6px 10px", fontSize:12}} placeholder="Coach 3B" value={tab==="away"?awStaff.coach3B:hmStaff.coach3B} onChange={(e)=>tab==="away"?setAwStaff({...awStaff, coach3B:e.target.value}):setHmStaff({...hmStaff, coach3B:e.target.value})} /></div>
-              </div>
+              <div><label style={{...S.label, fontSize:10}}>Manager Visitante ({aw?.abbr})</label><input style={{...S.input, padding:"6px 10px", fontSize:12}} placeholder="Manager" value={awStaff.manager} onChange={(e)=>setAwStaff({...awStaff, manager:e.target.value})} /></div>
+              <div><label style={{...S.label, fontSize:10}}>Manager Local ({hm?.abbr})</label><input style={{...S.input, padding:"6px 10px", fontSize:12}} placeholder="Manager" value={hmStaff.manager} onChange={(e)=>setHmStaff({...hmStaff, manager:e.target.value})} /></div>
             </div>
           </div>
           <div style={{borderLeft:`1px solid ${K.border}44`, paddingLeft: 16}}>
-            <h4 style={{fontSize:11, fontWeight:800, color:K.muted, textTransform:"uppercase", marginBottom:8}}>Oficiales del Juego</h4>
+            <h4 style={{fontSize:11, fontWeight:800, color:K.muted, textTransform:"uppercase", marginBottom:8}}>Árbitros y Anotación</h4>
             <div style={{display:"flex", flexDirection:"column", gap:8}}>
-              <div><label style={{...S.label, fontSize:10}}>Árbitro Principal (Home)</label><input style={{...S.input, padding:"6px 10px", fontSize:12}} placeholder="Nombre del Principal" value={umpires.hp} onChange={(e)=>setUmpires({...umpires, hp:e.target.value})} /></div>
-              <div><label style={{...S.label, fontSize:10}}>Árbitro Auxiliar (Bases)</label><input style={{...S.input, padding:"6px 10px", fontSize:12}} placeholder="Nombre del Auxiliar" value={umpires.bases} onChange={(e)=>setUmpires({...umpires, bases:e.target.value})} /></div>
+              <div><label style={{...S.label, fontSize:10}}>Anotador Oficial</label><input style={{...S.input, padding:"6px 10px", fontSize:12}} placeholder="Nombre del Anotador" value={umpires.scorer} onChange={(e)=>setUmpires({...umpires, scorer:e.target.value})} /></div>
+              
+              <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:8}}>
+                <div><label style={{...S.label, fontSize:10}}>Principal (Home)</label><input style={{...S.input, padding:"6px 10px", fontSize:12}} placeholder="Principal" value={umpires.hp} onChange={(e)=>setUmpires({...umpires, hp:e.target.value})} /></div>
+                <div><label style={{...S.label, fontSize:10}}>Auxiliar 1 (1B)</label><input style={{...S.input, padding:"6px 10px", fontSize:12}} placeholder="Aux 1" value={umpires.bases} onChange={(e)=>setUmpires({...umpires, bases:e.target.value})} /></div>
+                <div><label style={{...S.label, fontSize:10}}>Auxiliar 2 (2B)</label><input style={{...S.input, padding:"6px 10px", fontSize:12}} placeholder="Aux 2" value={umpires.bases2} onChange={(e)=>setUmpires({...umpires, bases2:e.target.value})} /></div>
+                <div><label style={{...S.label, fontSize:10}}>Auxiliar 3 (3B)</label><input style={{...S.input, padding:"6px 10px", fontSize:12}} placeholder="Aux 3" value={umpires.bases3} onChange={(e)=>setUmpires({...umpires, bases3:e.target.value})} /></div>
+              </div>
             </div>
           </div>
         </div>
@@ -227,6 +241,7 @@ export function LiveGame({ data, id, nav }: any) {
     return <PreGameSetup game={game} data={data} up={async (u:any)=>await F.set("games",id!,u)} nav={nav} />;
   }
 
+  const POS_OPTIONS = ["P(1)","C(2)","1B(3)","2B(4)","3B(5)","SS(6)","LF(7)","CF(8)","RF(9)","BD","BA"];
   const aw = data.teams.find((t:any) => t.id === game.awayTeamId);
   const hm = data.teams.find((t:any) => t.id === game.homeTeamId);
   const isTop = game.half === "top";
@@ -270,10 +285,60 @@ export function LiveGame({ data, id, nav }: any) {
   const doSub = async (side: "away" | "home", idx: number, newPlayer: any) => {
     const key = side === "away" ? "awayLineup" : "homeLineup";
     const lu = [...(game[key]||[])];
+    const oldPlayerId = lu[idx].id;
     const oldPos = lu[idx].fieldPos;
     lu[idx] = { id: newPlayer.id, name: newPlayer.name, number: newPlayer.number, position: newPlayer.position, fieldPos: oldPos };
-    await up({ [key]: lu });
+
+    // Verificamos si el jugador sustituido es el equipo que batea para actualizar las bases (Corredor Emergente)
+    const isBattingSide = (side === "away" && isTop) || (side === "home" && !isTop);
+    let newBases = [...(game.bases || [null, null, null])];
+    let basesChanged = false;
+
+    if (isBattingSide) {
+      newBases = newBases.map((b: any) => {
+        if (b && typeof b === 'object' && b.id === oldPlayerId) {
+          basesChanged = true;
+          return { id: newPlayer.id, name: newPlayer.name }; // El nuevo jugador toma la base
+        }
+        return b;
+      });
+    }
+
+    // Verificamos si el jugador sustituido era el Lanzador activo
+    let currentPitcherUpdate = {};
+    if (pitcher && pitcher.id === oldPlayerId) {
+       currentPitcherUpdate = { currentPitcher: { id: newPlayer.id, name: newPlayer.name, number: newPlayer.number } };
+    }
+
+    const updatePayload: any = { [key]: lu, ...currentPitcherUpdate };
+    if (basesChanged) updatePayload.bases = newBases;
+
+    await up(updatePayload);
     setShowSub(null);
+  };
+
+  const changeActivePosition = async (side: "away" | "home", idx: number, newPos: string) => {
+    const key = side === "away" ? "awayLineup" : "homeLineup";
+    const lu = [...(game[key]||[])];
+    const oldPos = lu[idx].fieldPos;
+
+    const otherIdx = lu.findIndex((p, i) => i !== idx && p.fieldPos === newPos);
+    
+    if (otherIdx !== -1) {
+      lu[otherIdx].fieldPos = oldPos; // Intercambio de posición
+    }
+    
+    lu[idx].fieldPos = newPos;
+
+    // Si hubo un cambio hacia o desde la posición P(1), actualizamos el Lanzador activo
+    let pitcherUpdate = {};
+    if (newPos === "P(1)") {
+       pitcherUpdate = { currentPitcher: { id: lu[idx].id, name: lu[idx].name, number: lu[idx].number } };
+    } else if (otherIdx !== -1 && oldPos === "P(1)") {
+       pitcherUpdate = { currentPitcher: { id: lu[otherIdx].id, name: lu[otherIdx].name, number: lu[otherIdx].number } };
+    }
+
+    await up({ [key]: lu, ...pitcherUpdate });
   };
 
   const buildDefenseMap = () => {
@@ -290,7 +355,7 @@ export function LiveGame({ data, id, nav }: any) {
       if (p.result !== "RUN" && p.result !== "SB" && p.result !== "CS" && p.result !== "PK") pa++; 
       if (["1B","2B","3B","HR"].includes(p.result)) { vb++; h++; if(p.result==="2B")db++; if(p.result==="3B")tb++; if(p.result==="HR")hr++; }
       else if (["BB","IBB","HBP"].includes(p.result)) bb++;
-      else if (["OUT","FLY","GROUND","K","DP","FC"].includes(p.result)) { vb++; if(p.result==="K")k++; }
+      else if (["OUT","FLY","GROUND","LINE","K","DP","FC"].includes(p.result)) { vb++; if(p.result==="K")k++; }
       else if (p.result === "E") vb++;
       ci += (p.ci||0); ca += (p.ca||0); if(p.result==="SB")sb++;
     });
@@ -309,7 +374,7 @@ export function LiveGame({ data, id, nav }: any) {
       if(["1B","2B","3B","HR","E"].includes(p.result)) h++;
       if(["BB","IBB","HBP"].includes(p.result)) bb++;
       if(p.result==="K") k++;
-      if(["OUT","FLY","GROUND","K","SAC","FC"].includes(p.result)) outs++;
+      if(["OUT","FLY","GROUND","LINE","K","SAC","FC"].includes(p.result)) outs++;
       if(p.result==="DP") outs+=2;
       if(p.isEarned!==false) cl+=(p.ci||0);
     });
@@ -320,8 +385,6 @@ export function LiveGame({ data, id, nav }: any) {
     const era = tIP > 0 ? ((tCL * 7) / tIP).toFixed(2) : "0.00";
     return { h,bb,K:k,cl,outs,pitches, ip:(Math.floor(outs/3)+(outs%3)/10).toFixed(1), hld:h, bba:bb, era };
   };
-
-  const getDefName = (pos: string) => { const p = pitchLineup.find((x:any) => x.fieldPos === pos); if (!p) return ""; return formatName(p.name); };
 
   const resetCount = () => ({balls:0,strikes:0});
   const nextBatter = () => batLineup.length===0 ? batIdx : (batIdx+1)%batLineup.length;
@@ -396,7 +459,7 @@ export function LiveGame({ data, id, nav }: any) {
       if (realRunners.length < runs) { for(let i=realRunners.length; i<runs; i++) realRunners.push({id:"ghost", name:"Corredor"}); }
       const runPlays = realRunners.slice(0, runs).filter((r:any) => r && r.id !== currentBatter?.id).map((r:any) => ({...makePlay("RUN", {ca:1, isPitch:false}), playerId: r.id, playerName: r.name}));
       let outsToAdd = 0;
-      if (["GROUND", "FLY", "FC", "SAC"].includes(type)) outsToAdd = 1; else if (type === "DP") outsToAdd = 2;
+      if (["GROUND", "FLY", "LINE", "FC", "SAC"].includes(type)) outsToAdd = 1; else if (type === "DP") outsToAdd = 2;
       const u: any = { plays: [...plays, play, ...runPlays], bases: newBases, count: resetCount(), [batIdxKey]: nextBatter(), ...scoreRuns(runs) };
       await processPlayAndCheckGameOver(u, outsToAdd);
       setShowConfirm(null);
@@ -435,7 +498,7 @@ export function LiveGame({ data, id, nav }: any) {
 
   const toggleRouteNode = (num:number) => { if(fieldRoute.includes(num)) setFieldRoute(fieldRoute.filter(x=>x!==num)); else setFieldRoute([...fieldRoute, num]); };
 
-  const executeFielding = async (type: "OUT" | "FLY" | "DP" | "FC" | "E" | "SAC") => {
+  const executeFielding = async (type: "OUT" | "FLY" | "LINE" | "DP" | "FC" | "E" | "SAC") => {
     const realType = type === "OUT" ? "GROUND" : type;
     const lastPos = fieldRoute[fieldRoute.length-1] || 6;
     const defPlayer = pitchLineup.find((p:any) => p.fieldPos?.includes(`(${lastPos})`));
@@ -532,14 +595,14 @@ export function LiveGame({ data, id, nav }: any) {
         if(!ba[p.playerId])ba[p.playerId]={VB:0,H:0,"2B":0,"3B":0,HR:0,CI:0,CA:0,BB:0,K:0,BR:0,E:0}; const s=ba[p.playerId];
         if(["1B","2B","3B","HR"].includes(p.result)){s.VB++;s.H++;if(p.result==="2B")s["2B"]++;if(p.result==="3B")s["3B"]++;if(p.result==="HR")s.HR++;}
         else if(["BB","IBB","HBP"].includes(p.result))s.BB++; 
-        else if(["OUT","FLY","GROUND","K","DP","E","FC"].includes(p.result)){s.VB++;if(p.result==="K")s.K++;}
+        else if(["OUT","FLY","GROUND","LINE","K","DP","E","FC"].includes(p.result)){s.VB++;if(p.result==="K")s.K++;}
         s.CI+=(p.ci||0);s.CA+=(p.ca||0);if(p.result==="SB")s.BR++;
       }
       
       if(p.pitcherId && p.result){
         if(!pa[p.pitcherId])pa[p.pitcherId]={H:0,BB:0,K:0,CL:0,outs:0,ts:""}; const s=pa[p.pitcherId];
         if(["1B","2B","3B","HR","E"].includes(p.result))s.H++; if(["BB","IBB","HBP"].includes(p.result))s.BB++; if(p.result==="K")s.K++;
-        if(["OUT","FLY","GROUND","K","SAC","FC"].includes(p.result))s.outs++; if(p.result==="DP")s.outs+=2; if(p.isEarned!==false)s.CL+=(p.ci||0);
+        if(["OUT","FLY","GROUND","LINE","K","SAC","FC"].includes(p.result))s.outs++; if(p.result==="DP")s.outs+=2; if(p.isEarned!==false)s.CL+=(p.ci||0);
         if(!s.ts)s.ts=(game.homeLineup||[]).find((x:any)=>x.id===p.pitcherId)?"home":"away";
       }
     });
@@ -573,7 +636,6 @@ export function LiveGame({ data, id, nav }: any) {
 
   const rp=[...plays].filter((p:any)=>p.result).reverse().slice(0,6);
 
-  // Cálculos para la tabla de arriba en Anotador
   const awH = game.awayHits || 0;
   const hmH = game.homeHits || 0;
   const awE = game.awayErrors || game.awayE || 0;
@@ -584,9 +646,9 @@ export function LiveGame({ data, id, nav }: any) {
     <button onClick={onClick} disabled={disabled} style={{padding:size==="lg"?"8px 4px":"6px 4px",borderRadius:10,border:`2px solid ${color}44`,background:bg||`${color}15`,color:disabled?K.muted:color,fontWeight:900,fontSize:size==="lg"?12:10,cursor:disabled?"not-allowed":"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:1,width:"100%",minHeight:size==="lg"?46:36,opacity:disabled?.4:1}}>
       <span style={{fontSize:size==="lg"?16:14}}>{icon}</span><span>{label}</span></button>);
       
-  const modalTitles:any = { "1B":"Confirmar Sencillo", "2B":"Confirmar Doble", "3B":"Confirmar Triple", "HR":"Confirmar Jonrón", "E":"Confirmar Error", "SAC":"Confirmar Sacrificio", "GROUND":"Confirmar Rodado (Out)", "FLY":"Confirmar Elevado", "DP":"Confirmar Doble Play", "FC":"Confirmar Jugada Selección" };
-  const modalIcons:any = { "1B":"🏏","2B":"✌️","3B":"🔱","HR":"💥","E":"🫣","SAC":"🎯", "GROUND":"⬇️", "FLY":"🔼", "DP":"✖️", "FC":"⚖️" };
-  const modalDescs:any = { "GROUND": "Bateador es OUT (1 Out). Toca las bases para colocar dónde quedaron los corredores (si avanzaron).", "FLY": "Bateador es OUT (1 Out). Mueve los corredores si hicieron pisa y corre.", "DP": "2 Outs. Bateador es OUT. Retira de base al otro corredor tocando su base.", "FC": "Jugada Selección (1 Out). Bateador se embasó. Retira al corredor forzado tocando su base.", "SAC": "Bateador es OUT (1 Out). Mueve a los corredores libremente.", "E": "Bateador embasado. Selecciona a quién se le carga el Error y ajusta las bases." };
+  const modalTitles:any = { "1B":"Confirmar Sencillo", "2B":"Confirmar Doble", "3B":"Confirmar Triple", "HR":"Confirmar Jonrón", "E":"Confirmar Error", "SAC":"Confirmar Sacrificio", "GROUND":"Confirmar Rodado (Out)", "FLY":"Confirmar Elevado", "LINE":"Confirmar Línea", "DP":"Confirmar Doble Play", "FC":"Confirmar Jugada Selección" };
+  const modalIcons:any = { "1B":"🏏","2B":"✌️","3B":"🔱","HR":"💥","E":"🫣","SAC":"🎯", "GROUND":"⬇️", "FLY":"🔼", "LINE":"➖", "DP":"✖️", "FC":"⚖️" };
+  const modalDescs:any = { "GROUND": "Bateador es OUT (1 Out). Toca las bases para colocar dónde quedaron los corredores (si avanzaron).", "FLY": "Bateador es OUT (1 Out). Mueve los corredores si hicieron pisa y corre.", "LINE": "Bateador es OUT de Línea (1 Out). Mueve los corredores si hubo pisa y corre o doble play.", "DP": "2 Outs. Bateador es OUT. Retira de base al otro corredor tocando su base.", "FC": "Jugada Selección (1 Out). Bateador se embasó. Retira al corredor forzado tocando su base.", "SAC": "Bateador es OUT (1 Out). Mueve a los corredores libremente.", "E": "Bateador embasado. Selecciona a quién se le carga el Error y ajusta las bases." };
 
   return (
     <div style={{background:K.bg,color:K.text,fontFamily:"'Outfit',system-ui,sans-serif",minHeight:"100vh",display:"flex",flexDirection:"column"}}>
@@ -630,7 +692,6 @@ export function LiveGame({ data, id, nav }: any) {
 
           <div style={{display:"flex",alignItems:"center",gap:16}}>
             
-            {/* 🔴 NUEVO: CONTEO DE BOLAS, STRIKES Y OUTS AQUI 🔴 */}
             <div style={{display:"flex", flexDirection:"column", gap:4, borderRight:`1px solid ${K.border}44`, paddingRight:12}}>
                <div style={{display:"flex", alignItems:"center", gap:6}}>
                  <span style={{fontSize:10, fontWeight:900, color:K.green, width:8}}>B</span>
@@ -654,7 +715,7 @@ export function LiveGame({ data, id, nav }: any) {
         {/* LEFT LINEUP (Con Duelo Reubicado) */}
         <div style={{background:"#0d1220",borderRight:`1px solid ${K.border}`,overflow:"auto",padding:"8px 6px"}}>
           
-          {/* NUEVO DUELO REUBICADO AQUI ARRIBA */}
+          {/* DUELO REUBICADO AQUI ARRIBA */}
           <div style={{background:K.input, borderRadius:8, padding:"8px", marginBottom:12, border:`1px solid ${K.border}`}}>
             <div style={{fontSize:9,fontWeight:900,color:K.muted,marginBottom:6,textAlign:"center", letterSpacing:1}}>ENFRENTAMIENTO</div>
             <div style={{display:"flex",justifyContent:"space-between", alignItems:"center", gap:4}}>
@@ -680,18 +741,53 @@ export function LiveGame({ data, id, nav }: any) {
               <button onClick={(e:any)=>{e.stopPropagation();setShowSub({side:sd as any,idx:i});}} style={{background:"none",border:"none",color:K.muted,cursor:"pointer",fontSize:10,padding:2}}>🔄</button></div>);})}
         </div>
 
-        {/* CENTER DIAMOND (ANOTADOR) - AHORA TOTALMENTE LIMPIO */}
+        {/* CENTER DIAMOND (ANOTADOR) CON NOMBRES CLICKABLES */}
         <div style={{background:"#080c16",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:12}}>
           {noPitcher&&<div style={{padding:"8px 14px",borderRadius:10,background:`${K.red}22`,border:`1px solid ${K.red}`,marginBottom:12,textAlign:"center"}}><span style={{fontSize:11,fontWeight:700,color:K.red}}>⚠️ Asigna pitcher</span></div>}
           
           <div style={{position:"relative",width:180,height:180, marginBottom:10}}>
             <svg width={180} height={180} viewBox="0 0 180 180"><polygon points="90,15 165,90 90,165 15,90" fill="none" stroke={K.border} strokeWidth="2"/><line x1="90" y1="165" x2="165" y2="90" stroke={K.border} strokeWidth="1" opacity=".3"/><line x1="90" y1="165" x2="15" y2="90" stroke={K.border} strokeWidth="1" opacity=".3"/></svg>
 
+            {/* NOMBRES DE LA DEFENSIVA EN EL DIAMANTE (CLICKABLES PARA SUSTITUIR) */}
+            {[1,2,3,4,5,6,7,8,9].map(posNum => {
+              const defP = pitchLineup.find((p:any) => p.fieldPos?.includes(`(${posNum})`));
+              if (!defP) return null;
+              const coords:any = { 1:{x:90,y:105}, 2:{x:90,y:180}, 3:{x:175,y:80}, 4:{x:130,y:35}, 5:{x:5,y:80}, 6:{x:50,y:35}, 7:{x:0,y:-10}, 8:{x:90,y:-20}, 9:{x:180,y:-10} };
+              const c = coords[posNum];
+              return (
+                <div key={posNum} onClick={() => {
+                  const pLineup = isTop ? (game.homeLineup||[]) : (game.awayLineup||[]);
+                  const idx = pLineup.findIndex((p:any) => p.fieldPos?.includes(`(${posNum})`));
+                  if (idx !== -1) setShowSub({ side: isTop ? "home" : "away", idx });
+                }} style={{
+                  position:"absolute", left:c.x, top:c.y, transform:"translate(-50%,-50%)",
+                  display:"flex", flexDirection:"column", alignItems:"center",
+                  cursor:"pointer", zIndex:20
+                }} title="Toca para cambiar jugador defensivo">
+                  <span style={{fontSize:9, fontWeight:900, color:K.accent, textShadow:`0 1px 2px #000, 0 -1px 2px #000, 1px 0 2px #000, -1px 0 2px #000`}}>{POS_LABELS[posNum]}</span>
+                  <span style={{fontSize:9, fontWeight:700, color:"#fff", whiteSpace:"nowrap", textShadow:`0 1px 2px #000, 0 -1px 2px #000, 1px 0 2px #000, -1px 0 2px #000`}}>{formatName(defP.name)}</span>
+                </div>
+              );
+            })}
+
             <div style={{position:"absolute",bottom:4,left:"50%",transform:"translateX(-50%) rotate(45deg)",width:18,height:18,background:K.muted,borderRadius:2}}/>
+            
+            {/* BASES INTERACTIVAS PARA CORREDORES EMERGENTES */}
             {[{idx:0,s:{right:4,top:"50%",transform:"translateY(-50%) rotate(45deg)"}},{idx:1,s:{left:"50%",top:2,transform:"translateX(-50%) rotate(45deg)"}},{idx:2,s:{left:4,top:"50%",transform:"translateY(-50%) rotate(45deg)"}}].map(b=>(
-              <div key={b.idx} style={{position:"absolute",...b.s}}>
-                <div onClick={async()=>{const bs=[...bases];bs[b.idx]=bs[b.idx]?null:{id:"ghost",name:"Corredor"};await up({bases:bs});}}
-                     style={{width:22,height:22,borderRadius:3,cursor:"pointer",background:bases[b.idx]?K.yellow:K.border,border:`2px solid ${bases[b.idx]?K.yellow:K.muted}`,boxShadow:bases[b.idx]?`0 0 12px ${K.yellow}66`:"none",transition:"all .2s"}}/></div>))}
+              <div key={b.idx} style={{position:"absolute",...b.s, zIndex:10}}>
+                <div onClick={async()=>{
+                  const runner = bases[b.idx];
+                  if (!runner) {
+                    const bs=[...(game.bases||[null,null,null])]; bs[b.idx]={id:"ghost",name:"Corredor"}; await up({bases:bs});
+                  } else if (runner.id === "ghost") {
+                    const bs=[...(game.bases||[null,null,null])]; bs[b.idx]=null; await up({bases:bs});
+                  } else {
+                    const bLineup = isTop ? (game.awayLineup||[]) : (game.homeLineup||[]);
+                    const idx = bLineup.findIndex((p:any) => p.id === runner.id);
+                    if (idx !== -1) setShowSub({ side: isTop ? "away" : "home", idx });
+                  }
+                }}
+                style={{width:22,height:22,borderRadius:3,cursor:"pointer",background:bases[b.idx]?K.yellow:K.border,border:`2px solid ${bases[b.idx]?K.yellow:K.muted}`,boxShadow:bases[b.idx]?`0 0 12px ${K.yellow}66`:"none",transition:"all .2s"}} title={bases[b.idx]&&bases[b.idx].id!=="ghost"?"Toca para corredor emergente":"Toca para poner/quitar corredor"}/></div>))}
           </div>
           <div style={{display:"flex",gap:16,marginTop:20}}>{["1ra","2da","3ra"].map((l,i)=><span key={i} style={{fontSize:10,fontWeight:700,color:bases[i]?K.yellow:K.muted}}>{l} {bases[i]?"●":"○"}</span>)}</div></div>
 
@@ -724,11 +820,11 @@ export function LiveGame({ data, id, nav }: any) {
         <div style={{gridColumn:"1/-1",background:"#0a0e1a",borderTop:`2px solid ${K.border}`,padding:"6px 12px",display:"flex",alignItems:"center",gap:10}}>
           <button onClick={undoLastPlay} style={{padding:"8px 14px",borderRadius:10,background:K.red+"22",border:`2px solid ${K.red}`,color:K.red,fontWeight:900,fontSize:11,cursor:"pointer",flexShrink:0}}>↩️ DESHACER</button>
           <div style={{flex:1,display:"flex",gap:6,overflow:"auto"}} className="sx">
-            {rp.map((p:any,i:number)=>{const ic:any={"1B":"🏏","2B":"✌️","3B":"🔱","HR":"💥","BB":"👁","IBB":"🤫","K":"💨","OUT":"❌","GROUND":"⬇️","FLY":"🔼","DP":"✖️","SAC":"🎯","HBP":"😤","E":"🫣","WP":"🤷","SB":"🏃","CS":"🚔","PK":"🎯","PB":"🧤","BALK":"🚫","RUN":"🏃‍♂️","FC":"⚖️"};
-              const rutText = p.route?.length > 0 ? `(${p.route.join("-")})` : "";
+            {rp.map((p:any,i:number)=>{const ic:any={"1B":"🏏","2B":"✌️","3B":"🔱","HR":"💥","BB":"👁","IBB":"🤫","K":"💨","OUT":"❌","GROUND":"⬇️","FLY":"🔼","LINE":"➖","DP":"✖️","SAC":"🎯","HBP":"😤","E":"🫣","WP":"🤷","SB":"🏃","CS":"🚔","PK":"🎯","PB":"🧤","BALK":"🚫","RUN":"🏃‍♂️","FC":"⚖️"};
+              const rutText = p.route?.length > 0 ? `(${p.route.map((n:number) => POS_LABELS[n]||n).join("-")})` : "";
               return<div key={i} style={{flexShrink:0,padding:"4px 10px",borderRadius:8,background:K.input,border:`1px solid ${K.border}`,display:"flex",alignItems:"center",gap:4,fontSize:10}}>
                 <span>{ic[p.result]||"⚾"}</span><span style={{fontWeight:700}}>{formatName(p.playerName)}</span>
-                <span style={{color:K.muted}}>{p.result} {rutText} {p.errorPosition?`(${p.errorPosition})`:""}</span>
+                <span style={{color:K.muted}}>{p.result} {rutText} {p.errorPosition?`(${POS_LABELS[p.errorPosition]||p.errorPosition})`:""}</span>
                 {p.ci>0&&<span style={{color:K.accent,fontWeight:700}}>+{p.ci}CI</span>}
                 {p.isEarned===false&&<span style={{color:K.yellow,fontSize:8}}>UER</span>}</div>})}</div>
         </div>
@@ -750,25 +846,25 @@ export function LiveGame({ data, id, nav }: any) {
             </svg>
             {[1,2,3,4,5,6,7,8,9].map(num => {
               const isActive = fieldRoute.includes(num);
-              const stepNum = fieldRoute.indexOf(num) + 1;
               return (
                 <div key={num} onClick={()=>toggleRouteNode(num)} className="node-btn"
                      style={{left:POS_COORDS[num].x+20, top:POS_COORDS[num].y+40, 
                              background: isActive ? K.accent : K.card, 
                              border: `2px solid ${isActive?K.accent:K.muted}`, color:isActive?"#000":K.text}}>
-                  {isActive ? stepNum : num}
+                  {POS_LABELS[num]}
                 </div>)
             })}
           </div>
           <div style={{fontSize:24, fontWeight:900, color:K.accent, letterSpacing:4, minHeight:34, marginBottom:16}}>
-            {fieldRoute.length > 0 ? fieldRoute.join(" - ") : "..."}
+            {fieldRoute.length > 0 ? fieldRoute.map(n => POS_LABELS[n]).join(" - ") : "..."}
           </div>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
-            <button onClick={()=>executeFielding("OUT")} disabled={fieldRoute.length===0} style={{...S.btn("primary"), opacity:fieldRoute.length?1:0.5}}>⬇️ Rodado (Out)</button>
-            <button onClick={()=>executeFielding("FLY")} disabled={fieldRoute.length===0} style={{...S.btn("ghost"), border:`1px solid ${K.border}`, opacity:fieldRoute.length?1:0.5}}>🔼 Elevado (Fly)</button>
-            <button onClick={()=>executeFielding("DP")} disabled={fieldRoute.length<2} style={{...S.btn("danger"), background:`${K.red}22`, opacity:fieldRoute.length>1?1:0.5}}>✖️✖️ Doble Play</button>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
+            <button onClick={()=>executeFielding("OUT")} disabled={fieldRoute.length===0} style={{...S.btn("primary"), opacity:fieldRoute.length?1:0.5, fontSize:11}}>⬇️ Rodado</button>
+            <button onClick={()=>executeFielding("FLY")} disabled={fieldRoute.length===0} style={{...S.btn("ghost"), border:`1px solid ${K.border}`, opacity:fieldRoute.length?1:0.5, fontSize:11}}>🔼 Elevado</button>
+            <button onClick={()=>executeFielding("LINE")} disabled={fieldRoute.length===0} style={{...S.btn("ghost"), border:`1px solid ${K.border}`, opacity:fieldRoute.length?1:0.5, fontSize:11}}>➖ Línea</button>
+            <button onClick={()=>executeFielding("DP")} disabled={fieldRoute.length<2} style={{...S.btn("danger"), background:`${K.red}22`, opacity:fieldRoute.length>1?1:0.5, gridColumn:"1/-1"}}>✖️✖️ Doble Play</button>
             <button onClick={()=>executeFielding("FC")} disabled={fieldRoute.length===0} style={{...S.btn("ghost"), border:`1px solid ${K.blue}44`, color:K.blue, opacity:fieldRoute.length?1:0.5}}>⚖️ Jugada Selección</button>
-            <button onClick={()=>executeFielding("SAC")} disabled={fieldRoute.length===0} style={{gridColumn:"1/-1", padding:12, borderRadius:8, background:"#262626", border:"1px solid #a3a3a3", color:"#a3a3a3", fontWeight:900, cursor:"pointer", opacity:fieldRoute.length?1:0.5}}>🎯 Sacrificio (Fly / Toque)</button>
+            <button onClick={()=>executeFielding("SAC")} disabled={fieldRoute.length===0} style={{gridColumn:"span 2", padding:12, borderRadius:8, background:"#262626", border:"1px solid #a3a3a3", color:"#a3a3a3", fontWeight:900, cursor:"pointer", opacity:fieldRoute.length?1:0.5}}>🎯 Sacrificio (Fly / Toque)</button>
           </div>
         </div>
       </div>}
@@ -825,16 +921,38 @@ export function LiveGame({ data, id, nav }: any) {
         </div>
       </Modal>}
 
-      {showSub&&<Modal title="Sustitución" onClose={()=>setShowSub(null)}>
-        <div style={{marginBottom:12,padding:10,background:K.input,borderRadius:10}}>
-          <div style={{fontSize:10,color:K.muted}}>SALE:</div>
-          <div style={{fontWeight:800,fontSize:14,color:K.red,marginTop:2}}>#{(showSub.side==="away"?(game.awayLineup||[]):(game.homeLineup||[]))[showSub.idx]?.number} {formatName((showSub.side==="away"?(game.awayLineup||[]):(game.homeLineup||[]))[showSub.idx]?.name)}</div></div>
-        <div style={{fontSize:10,color:K.muted,marginBottom:8}}>ENTRA:</div>
-        <div style={{maxHeight:"50vh", overflowY:"auto"}}>
-          {getAvailSubs(showSub.side).map((p:any)=><button key={p.id} onClick={()=>doSub(showSub.side,showSub.idx,p)} style={{display:"flex",alignItems:"center",gap:8,padding:"10px 12px",borderRadius:10,border:`2px solid ${K.border}`,background:K.input,cursor:"pointer",width:"100%",marginBottom:6,textAlign:"left"}}>
-            <span style={{fontWeight:800,color:K.accent}}>#{p.number||"—"}</span><span style={{fontWeight:700,fontSize:14,flex:1}}>{formatName(p.name)}</span><span style={{fontSize:10,color:K.muted}}>{p.position}</span></button>)}
-          {getAvailSubs(showSub.side).length === 0 && <div style={{fontSize:11, color:K.muted, textAlign:"center", padding:20}}>No quedan jugadores disponibles en la banca para sustituir.</div>}
-        </div>
+      {/* MODAL DE SUSTITUCIÓN Y CAMBIO DEFENSIVO REVISADO */}
+      {showSub&&<Modal title="Sustitución o Cambio Defensivo" onClose={()=>setShowSub(null)}>
+        {(()=>{
+           const sideArray = showSub.side === "away" ? (game.awayLineup||[]) : (game.homeLineup||[]);
+           const targetPlayer = sideArray[showSub.idx];
+           return (
+             <div style={{marginBottom:12}}>
+               {/* Sección de Cambio Defensivo (Mismo Jugador) */}
+               <div style={{padding:12, background:K.input, borderRadius:10, border:`1px solid ${K.border}`, marginBottom:16}}>
+                 <div style={{fontSize:10, color:K.muted, marginBottom:4}}>JUGADOR ACTUAL (Cambio Defensivo o Switch):</div>
+                 <div style={{display:"flex", alignItems:"center", gap:8}}>
+                   <span style={{fontWeight:800, fontSize:14, color:K.accent}}>#{targetPlayer?.number} {formatName(targetPlayer?.name)}</span>
+                   <select 
+                     value={targetPlayer?.fieldPos} 
+                     onChange={(e)=> { changeActivePosition(showSub.side, showSub.idx, e.target.value); setShowSub(null); }} 
+                     style={{background:K.card, border:`1px solid ${K.border}`, color:K.text, borderRadius:6, padding:"4px 8px", fontSize:12, fontWeight:800, flex:1}}
+                   >
+                     {POS_OPTIONS.map(po => <option key={po} value={po}>{po}</option>)}
+                   </select>
+                 </div>
+               </div>
+
+               {/* Sección de Bateador Emergente (Sustitución de Roster) */}
+               <div style={{fontSize:10,color:K.muted,marginBottom:8}}>SUSTITUIR POR (Emergente):</div>
+               <div style={{maxHeight:"45vh", overflowY:"auto"}}>
+                 {getAvailSubs(showSub.side).map((p:any)=><button key={p.id} onClick={()=>doSub(showSub.side,showSub.idx,p)} style={{display:"flex",alignItems:"center",gap:8,padding:"10px 12px",borderRadius:10,border:`2px solid ${K.border}`,background:K.input,cursor:"pointer",width:"100%",marginBottom:6,textAlign:"left"}}>
+                   <span style={{fontWeight:800,color:K.accent}}>#{p.number||"—"}</span><span style={{fontWeight:700,fontSize:14,flex:1}}>{formatName(p.name)}</span><span style={{fontSize:10,color:K.muted}}>{p.position}</span></button>)}
+                 {getAvailSubs(showSub.side).length === 0 && <div style={{fontSize:11, color:K.muted, textAlign:"center", padding:20}}>No quedan jugadores disponibles en la banca para sustituir.</div>}
+               </div>
+             </div>
+           );
+        })()}
       </Modal>}
     </div>
   );
@@ -848,7 +966,7 @@ const getPlayNarrative = (p: any) => {
   const n = formatName(p.playerName) || "Bateador";
   const r = p.route && p.route.length > 0 ? p.route : null;
   const lastPos = r ? POS_NAMES[r[r.length-1]] : "";
-  const rStr = r ? ` (${r.join("-")})` : "";
+  const rStr = r ? ` (${r.map((posNum:number) => POS_LABELS[posNum] || posNum).join("-")})` : "";
 
   switch(p.result) {
     case "1B": return `${n} bateó un sencillo${lastPos ? ` al ${lastPos}` : ""}.`;
@@ -860,6 +978,7 @@ const getPlayNarrative = (p: any) => {
     case "K": return `${n} se ponchó.`;
     case "GROUND": return `${n} falló con rodado${lastPos ? ` a ${lastPos}` : ""}${rStr}.`;
     case "FLY": return `${n} falló con elevado${lastPos ? ` al ${lastPos}` : ""}.`;
+    case "LINE": return `${n} falló con línea fuerte${lastPos ? ` al ${lastPos}` : ""}${rStr}.`;
     case "DP": return `${n} bateó para doble play${rStr}.`;
     case "E": return `${n} se embasó por error del ${POS_NAMES[p.errorPosition] || "fildeador"}.`;
     case "FC": return `${n} llegó a primera en jugada de selección.`;
@@ -900,7 +1019,7 @@ export function WatchGame({ data, id, nav }: any) {
       if (p.result !== "RUN" && p.result !== "SB" && p.result !== "CS" && p.result !== "PK") pa++; 
       if (["1B","2B","3B","HR"].includes(p.result)) { vb++; h++; if(p.result==="2B")db++; if(p.result==="3B")tb++; if(p.result==="HR")hr++; }
       else if (["BB","IBB","HBP"].includes(p.result)) bb++;
-      else if (["OUT","FLY","GROUND","K","DP","FC"].includes(p.result)) { vb++; if(p.result==="K")k++; }
+      else if (["OUT","FLY","GROUND","LINE","K","DP","FC"].includes(p.result)) { vb++; if(p.result==="K")k++; }
       else if (p.result === "E") vb++;
       ci += (p.ci||0); ca += (p.ca||0); if(p.result==="SB")sb++;
     });
@@ -919,7 +1038,7 @@ export function WatchGame({ data, id, nav }: any) {
       if(["1B","2B","3B","HR","E"].includes(p.result)) h++;
       if(["BB","IBB","HBP"].includes(p.result)) bb++;
       if(p.result==="K") k++;
-      if(["OUT","FLY","GROUND","K","SAC","FC"].includes(p.result)) outs++;
+      if(["OUT","FLY","GROUND","LINE","K","SAC","FC"].includes(p.result)) outs++;
       if(p.result==="DP") outs+=2;
       if(p.isEarned!==false) cl+=(p.ci||0);
     });

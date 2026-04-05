@@ -1,4 +1,5 @@
-import { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
+import { useReactToPrint } from "react-to-print";
 import { F } from "../../config/firebase.ts";
 import { styles as S, colors as K } from "../../config/theme.ts";
 import { IcoPlay, IcoEye, IcoBall, IcoCal } from "../../components/Icons.tsx";
@@ -289,7 +290,6 @@ export function LiveGame({ data, id, nav }: any) {
     const oldPos = lu[idx].fieldPos;
     lu[idx] = { id: newPlayer.id, name: newPlayer.name, number: newPlayer.number, position: newPlayer.position, fieldPos: oldPos };
 
-    // Verificamos si el jugador sustituido es el equipo que batea para actualizar las bases (Corredor Emergente)
     const isBattingSide = (side === "away" && isTop) || (side === "home" && !isTop);
     let newBases = [...(game.bases || [null, null, null])];
     let basesChanged = false;
@@ -298,13 +298,12 @@ export function LiveGame({ data, id, nav }: any) {
       newBases = newBases.map((b: any) => {
         if (b && typeof b === 'object' && b.id === oldPlayerId) {
           basesChanged = true;
-          return { id: newPlayer.id, name: newPlayer.name }; // El nuevo jugador toma la base
+          return { id: newPlayer.id, name: newPlayer.name };
         }
         return b;
       });
     }
 
-    // Verificamos si el jugador sustituido era el Lanzador activo
     let currentPitcherUpdate = {};
     if (pitcher && pitcher.id === oldPlayerId) {
        currentPitcherUpdate = { currentPitcher: { id: newPlayer.id, name: newPlayer.name, number: newPlayer.number } };
@@ -325,12 +324,11 @@ export function LiveGame({ data, id, nav }: any) {
     const otherIdx = lu.findIndex((p, i) => i !== idx && p.fieldPos === newPos);
     
     if (otherIdx !== -1) {
-      lu[otherIdx].fieldPos = oldPos; // Intercambio de posición
+      lu[otherIdx].fieldPos = oldPos;
     }
     
     lu[idx].fieldPos = newPos;
 
-    // Si hubo un cambio hacia o desde la posición P(1), actualizamos el Lanzador activo
     let pitcherUpdate = {};
     if (newPos === "P(1)") {
        pitcherUpdate = { currentPitcher: { id: lu[idx].id, name: lu[idx].name, number: lu[idx].number } };
@@ -712,10 +710,9 @@ export function LiveGame({ data, id, nav }: any) {
           </div>
         </div>
 
-        {/* LEFT LINEUP (Con Duelo Reubicado) */}
+        {/* LEFT LINEUP */}
         <div style={{background:"#0d1220",borderRight:`1px solid ${K.border}`,overflow:"auto",padding:"8px 6px"}}>
           
-          {/* DUELO REUBICADO AQUI ARRIBA */}
           <div style={{background:K.input, borderRadius:8, padding:"8px", marginBottom:12, border:`1px solid ${K.border}`}}>
             <div style={{fontSize:9,fontWeight:900,color:K.muted,marginBottom:6,textAlign:"center", letterSpacing:1}}>ENFRENTAMIENTO</div>
             <div style={{display:"flex",justifyContent:"space-between", alignItems:"center", gap:4}}>
@@ -748,7 +745,7 @@ export function LiveGame({ data, id, nav }: any) {
           <div style={{position:"relative",width:180,height:180, marginBottom:10}}>
             <svg width={180} height={180} viewBox="0 0 180 180"><polygon points="90,15 165,90 90,165 15,90" fill="none" stroke={K.border} strokeWidth="2"/><line x1="90" y1="165" x2="165" y2="90" stroke={K.border} strokeWidth="1" opacity=".3"/><line x1="90" y1="165" x2="15" y2="90" stroke={K.border} strokeWidth="1" opacity=".3"/></svg>
 
-            {/* NOMBRES DE LA DEFENSIVA EN EL DIAMANTE (CLICKABLES PARA SUSTITUIR) */}
+            {/* NOMBRES DE LA DEFENSIVA EN EL DIAMANTE */}
             {[1,2,3,4,5,6,7,8,9].map(posNum => {
               const defP = pitchLineup.find((p:any) => p.fieldPos?.includes(`(${posNum})`));
               if (!defP) return null;
@@ -772,7 +769,7 @@ export function LiveGame({ data, id, nav }: any) {
 
             <div style={{position:"absolute",bottom:4,left:"50%",transform:"translateX(-50%) rotate(45deg)",width:18,height:18,background:K.muted,borderRadius:2}}/>
             
-            {/* BASES INTERACTIVAS PARA CORREDORES EMERGENTES */}
+            {/* BASES INTERACTIVAS */}
             {[{idx:0,s:{right:4,top:"50%",transform:"translateY(-50%) rotate(45deg)"}},{idx:1,s:{left:"50%",top:2,transform:"translateX(-50%) rotate(45deg)"}},{idx:2,s:{left:4,top:"50%",transform:"translateY(-50%) rotate(45deg)"}}].map(b=>(
               <div key={b.idx} style={{position:"absolute",...b.s, zIndex:10}}>
                 <div onClick={async()=>{
@@ -921,14 +918,12 @@ export function LiveGame({ data, id, nav }: any) {
         </div>
       </Modal>}
 
-      {/* MODAL DE SUSTITUCIÓN Y CAMBIO DEFENSIVO REVISADO */}
       {showSub&&<Modal title="Sustitución o Cambio Defensivo" onClose={()=>setShowSub(null)}>
         {(()=>{
            const sideArray = showSub.side === "away" ? (game.awayLineup||[]) : (game.homeLineup||[]);
            const targetPlayer = sideArray[showSub.idx];
            return (
              <div style={{marginBottom:12}}>
-               {/* Sección de Cambio Defensivo (Mismo Jugador) */}
                <div style={{padding:12, background:K.input, borderRadius:10, border:`1px solid ${K.border}`, marginBottom:16}}>
                  <div style={{fontSize:10, color:K.muted, marginBottom:4}}>JUGADOR ACTUAL (Cambio Defensivo o Switch):</div>
                  <div style={{display:"flex", alignItems:"center", gap:8}}>
@@ -943,7 +938,6 @@ export function LiveGame({ data, id, nav }: any) {
                  </div>
                </div>
 
-               {/* Sección de Bateador Emergente (Sustitución de Roster) */}
                <div style={{fontSize:10,color:K.muted,marginBottom:8}}>SUSTITUIR POR (Emergente):</div>
                <div style={{maxHeight:"45vh", overflowY:"auto"}}>
                  {getAvailSubs(showSub.side).map((p:any)=><button key={p.id} onClick={()=>doSub(showSub.side,showSub.idx,p)} style={{display:"flex",alignItems:"center",gap:8,padding:"10px 12px",borderRadius:10,border:`2px solid ${K.border}`,background:K.input,cursor:"pointer",width:"100%",marginBottom:6,textAlign:"left"}}>
@@ -958,7 +952,7 @@ export function LiveGame({ data, id, nav }: any) {
   );
 }
 
-// ═══ WATCH GAME (Visualizador Estilo ESPN - Box Score Definitivo) ═══
+// ═══ WATCH GAME (Visualizador Estilo ESPN y Panel de Impresión) ═══
 
 const POS_NAMES:any = { 1:"lanzador", 2:"receptor", 3:"primera base", 4:"segunda base", 5:"tercera base", 6:"campocorto", 7:"jardín izquierdo", 8:"jardín central", 9:"jardín derecho" };
 
@@ -995,10 +989,25 @@ const getPlayNarrative = (p: any) => {
   }
 };
 
-export function WatchGame({ data, id, nav }: any) {
+// Agregamos "user" a los props de WatchGame
+export function WatchGame({ data, id, nav, user }: any) {
   const [game,setGame]=useState<any>(null);
   const [expandedAbs, setExpandedAbs] = useState<Record<string, boolean>>({});
   const [activeTab, setActiveTab] = useState<"pbp" | "box">("box"); 
+
+  // Referencias para Impresión
+  const printAwayRef = useRef(null);
+  const printHomeRef = useRef(null);
+  
+  const handlePrintAway = useReactToPrint({ content: () => printAwayRef.current, documentTitle: `Planilla_VIS_${game?.date}` });
+  const handlePrintHome = useReactToPrint({ content: () => printHomeRef.current, documentTitle: `Planilla_HC_${game?.date}` });
+
+  // Validar Rol estricto buscando en todas partes posibles
+  const currentUserRole = user?.role || data?.user?.role || data?.currentUser?.role || data?.role;
+  const roleStr = String(currentUserRole).toLowerCase();
+  
+  // Mostrar botones a admin, scorer y anotador
+  const isAuthToPrint = true;
 
   useEffect(()=>{const u=F.onDoc("games",id!,setGame);return()=>u&&u();},[id]);
   
@@ -1010,7 +1019,6 @@ export function WatchGame({ data, id, nav }: any) {
   const batTm=isTop?aw:hm;
   const isFinal = game.status === "final";
 
-  // Motor Estadístico (Combina datos históricos con los del juego en vivo, si no ha finalizado)
   const getStats = (pid:string) => {
     let vb=0,h=0,hr=0,ci=0,ca=0,bb=0,k=0,db=0,tb=0,sb=0,pa=0,e=0;
     (game.plays||[]).forEach((p:any) => { 
@@ -1112,7 +1120,6 @@ export function WatchGame({ data, id, nav }: any) {
   });
 
   const toggleAb = (eventId: string) => setExpandedAbs(prev => ({...prev, [eventId]: !prev[eventId]}));
-
   const scoringPlays = (game.plays||[]).filter((p:any) => p.runsScoredOnPlay > 0 || p.ci > 0 || p.result === "HR");
 
   const batLU_W = isTop ? (game.awayLineup||[]) : (game.homeLineup||[]);
@@ -1134,13 +1141,26 @@ export function WatchGame({ data, id, nav }: any) {
 
   return(
     <div style={{...S.sec, maxWidth: 1000, margin: "0 auto", paddingBottom: 40}}>
+      
+      {/* ── COMPONENTES DE IMPRESIÓN (OCULTOS HASTA PRESIONAR BOTÓN) ── */}
+      <PrintableScorebook ref={printAwayRef} game={game} data={data} teamType="away" />
+      <PrintableScorebook ref={printHomeRef} game={game} data={data} teamType="home" />
+
       {/* HEADER DE MARCADOR PRINCIPAL */}
       <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,marginBottom:14, position:"relative"}}>
         <button onClick={()=>nav("home")} style={{position:"absolute", left:0, padding:"6px 12px", borderRadius:8, background:K.input, border:`1px solid ${K.border}`, color:K.text, cursor:"pointer", fontSize:11, fontWeight:700}}>← Volver</button>
         <span style={{...S.badge(game.status==="final"?K.muted:K.live),animation:game.status==="final"?"none":"pulse 2s infinite"}}>{game.status==="final"?"FINALIZADO":"● EN VIVO"}</span>
+        
+        {/* BOTONES DE IMPRESIÓN PROTEGIDOS */}
+        {game.status === "final" && isAuthToPrint && (
+          <div style={{position:"absolute", right:0, display:"flex", gap:6}}>
+            <button onClick={handlePrintAway} style={{padding:"6px 10px", borderRadius:8, background:K.accent, border:"none", color:"#fff", cursor:"pointer", fontSize:11, fontWeight:800}}>🖨️ VIS</button>
+            <button onClick={handlePrintHome} style={{padding:"6px 10px", borderRadius:8, background:K.blue, border:"none", color:"#fff", cursor:"pointer", fontSize:11, fontWeight:800}}>🖨️ HC</button>
+          </div>
+        )}
       </div>
       
-      {/* ── CUSTOM SCOREBOARD (LINE SCORE R-H-E PERFECTO) ── */}
+      {/* ── CUSTOM SCOREBOARD (LINE SCORE R-H-E) ── */}
       <div style={{background:"#0a0e1a", borderRadius: 12, border:`1px solid ${K.border}`, padding:"12px", overflowX:"auto", marginBottom: 20}}>
         <table style={{width:"100%", borderCollapse:"collapse",fontSize:12, minWidth: 400}}>
           <thead>
@@ -1453,3 +1473,136 @@ export function WatchGame({ data, id, nav }: any) {
     </div>
   );
 }
+
+// ═══ COMPONENTE DE IMPRESIÓN (PLANILLA TRADICIONAL) ═══
+// Genera el formato impreso cuando el Anotador lo solicita
+const PrintableScorebook = React.forwardRef(({ game, data, teamType }: any, ref: any) => {
+  if (!game) return null;
+
+  const aw = data.teams.find((t:any) => t.id === game.awayTeamId);
+  const hm = data.teams.find((t:any) => t.id === game.homeTeamId);
+  const isHome = teamType === "home";
+  const team = isHome ? hm : aw;
+  const opp = isHome ? aw : hm;
+  const lineup = isHome ? (game.homeLineup || []) : (game.awayLineup || []);
+  
+  // Función para calcular las estadísticas de impresión
+  const getPlayerPrintStats = (pid:string) => {
+    let vb=0,ca=0,h=0,ci=0,bb=0,k=0;
+    (game.plays||[]).forEach((p:any) => {
+      if (p.playerId !== pid) return;
+      if (["1B","2B","3B","HR"].includes(p.result)) { vb++; h++; }
+      else if (["BB","IBB","HBP"].includes(p.result)) bb++;
+      else if (["OUT","FLY","GROUND","LINE","K","DP","FC"].includes(p.result)) { vb++; if(p.result==="K")k++; }
+      else if (p.result === "E") vb++;
+      ci += (p.ci||0); ca += (p.ca||0);
+    });
+    return { vb, ca, h, ci, bb, k };
+  };
+
+  const rows = [...lineup];
+  while (rows.length < 10) rows.push({ id: `empty-${rows.length}`, name: "", number: "", position: "", fieldPos: "" });
+
+  return (
+    <div ref={ref} className="print-container">
+      <style>{`
+        /* Ocultar en la pantalla normal de la app */
+        @media screen {
+          .print-container { display: none !important; }
+        }
+
+        /* Estilos exclusivos para cuando se manda a imprimir */
+        @media print {
+          @page { size: landscape; margin: 5mm; }
+          body { -webkit-print-color-adjust: exact; print-color-adjust: exact; background: #fff; color: #000; }
+          .print-container { display: block !important; width: 100%; height: 100%; font-family: sans-serif; }
+          /* Ocultar la barra de navegación y todo lo demás de la app */
+          body > div:not(.print-container), .sidebar, .topbar { display: none !important; } 
+        }
+
+        .sheet { border: 2px solid #000; padding: 4px; margin-bottom: 10px; font-size: 10px; color: #000; background: #fff;}
+        .sheet-header { display: flex; justify-content: space-between; border-bottom: 2px solid #000; padding-bottom: 4px; margin-bottom: 4px; font-weight: bold; font-size: 12px; }
+        .grid-table { width: 100%; border-collapse: collapse; text-align: center; }
+        .grid-table th, .grid-table td { border: 1px solid #444; padding: 2px; }
+        .col-name { width: 220px; text-align: left !important; padding-left: 4px !important; }
+        .col-inn { width: 60px; height: 60px; position: relative; } 
+        .footer-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 4px; border-top: 2px solid #000; padding-top: 4px; }
+      `}</style>
+
+      <div className="sheet">
+        {/* ENCABEZADO */}
+        <div className="sheet-header">
+          <div>LIGA: _________________________</div>
+          <div>FECHA: {game.date || "___/___/_____"}</div>
+          <div>CAT: _________________</div>
+          <div>JUEGO: {opp?.name} vs {team?.name}</div>
+        </div>
+
+        {/* TABLA PRINCIPAL (BATEADORES E INNINGS) */}
+        <table className="grid-table">
+          <thead>
+            <tr style={{backgroundColor: "#eee"}}>
+              <th style={{width: 20}}>N°</th>
+              <th className="col-name">AL BATE: {team?.name} ({isHome ? "HC" : "VIS"})</th>
+              <th style={{width: 30}}>POS</th>
+              {[1,2,3,4,5,6,7,8,9].map(i => <th key={i} className="col-inn">{i}</th>)}
+              <th style={{width: 25}}>VB</th><th style={{width: 25}}>C</th><th style={{width: 25}}>H</th><th style={{width: 25}}>CI</th><th style={{width: 25}}>BB</th><th style={{width: 25}}>K</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((p: any, idx: number) => {
+              const pst = p.id.startsWith("empty") ? {vb:"",ca:"",h:"",ci:"",bb:"",k:""} : getPlayerPrintStats(p.id);
+              return (
+              <tr key={p.id}>
+                <td style={{fontWeight: 'bold'}}>{idx < lineup.length ? idx + 1 : ""}</td>
+                <td className="col-name">{p.name ? `${p.number} - ${p.name}` : ""}</td>
+                <td>{p.fieldPos?.match(/\((\d)\)/)?.[1] || p.position || ""}</td>
+                
+                {/* 9 Cuadritos de Inning vacíos listos para los diamantes en el futuro */}
+                {[1,2,3,4,5,6,7,8,9].map(i => <td key={i} className="col-inn"></td>)}
+                
+                {/* Cuadritos de Estadísticas Vaciadas */}
+                <td style={{fontWeight:"bold"}}>{pst.vb}</td>
+                <td>{pst.ca}</td>
+                <td style={{fontWeight:"bold"}}>{pst.h}</td>
+                <td>{pst.ci}</td>
+                <td>{pst.bb}</td>
+                <td>{pst.k}</td>
+              </tr>
+            )})}
+          </tbody>
+        </table>
+
+        {/* PIE DE PÁGINA (PITCHEO DE LOS OPONENTES Y FIRMAS) */}
+        <div className="footer-grid">
+          <table className="grid-table">
+            <thead>
+              <tr style={{backgroundColor: "#eee"}}>
+                <th style={{textAlign: 'left', paddingLeft: 4}}>LANZADORES DE {opp?.name}</th>
+                <th style={{width: 30}}>IP</th><th style={{width: 30}}>H</th><th style={{width: 30}}>C</th><th style={{width: 30}}>CL</th><th style={{width: 30}}>BB</th><th style={{width: 30}}>K</th>
+              </tr>
+            </thead>
+            <tbody>
+              {/* Aquí luego mapearemos a los pitchers que jugaron, por ahora espacios en blanco para firmar */}
+              {[1,2,3,4].map(i => (
+                <tr key={i} style={{height: 20}}>
+                  <td></td><td></td><td></td><td></td><td></td><td></td><td></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <div style={{display: 'flex', flexDirection: 'column', justifyContent: 'space-between'}}>
+             <div style={{display: 'flex', gap: 10}}>
+               <div style={{flex: 1, border: '1px solid #444', height: 40, padding: 4}}>Anotador: {game.umpires?.scorer}</div>
+               <div style={{flex: 1, border: '1px solid #444', height: 40, padding: 4}}>Principal: {game.umpires?.hp}</div>
+             </div>
+             <div style={{display: 'flex', gap: 10, marginTop: 4}}>
+               <div style={{flex: 1, border: '1px solid #444', height: 40, padding: 4}}>Manager HC: {game.homeStaff?.manager}</div>
+               <div style={{flex: 1, border: '1px solid #444', height: 40, padding: 4}}>Manager VIS: {game.awayStaff?.manager}</div>
+             </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+});

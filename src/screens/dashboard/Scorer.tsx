@@ -1,5 +1,6 @@
-import React, { useState, useEffect, useRef } from "react";
-import { useReactToPrint } from "react-to-print";
+import React, { useState, useEffect } from "react";
+import jsPDF from "jspdf";
+import html2canvas from "html2canvas";
 import { F } from "../../config/firebase.ts";
 import { styles as S, colors as K } from "../../config/theme.ts";
 import { IcoPlay, IcoEye, IcoBall, IcoCal } from "../../components/Icons.tsx";
@@ -952,7 +953,7 @@ export function LiveGame({ data, id, nav }: any) {
   );
 }
 
-// ═══ WATCH GAME (Visualizador Estilo ESPN y Panel de Impresión) ═══
+// ═══ WATCH GAME (Visualizador Estilo ESPN y Descarga de PDF) ═══
 
 const POS_NAMES:any = { 1:"lanzador", 2:"receptor", 3:"primera base", 4:"segunda base", 5:"tercera base", 6:"campocorto", 7:"jardín izquierdo", 8:"jardín central", 9:"jardín derecho" };
 
@@ -989,24 +990,13 @@ const getPlayNarrative = (p: any) => {
   }
 };
 
-// Agregamos "user" a los props de WatchGame
 export function WatchGame({ data, id, nav, user }: any) {
   const [game,setGame]=useState<any>(null);
   const [expandedAbs, setExpandedAbs] = useState<Record<string, boolean>>({});
   const [activeTab, setActiveTab] = useState<"pbp" | "box">("box"); 
+  const [isGenerating, setIsGenerating] = useState(false);
 
-  // Referencias para Impresión
-  const printAwayRef = useRef(null);
-  const printHomeRef = useRef(null);
-  
-  const handlePrintAway = useReactToPrint({ content: () => printAwayRef.current, documentTitle: `Planilla_VIS_${game?.date}` });
-  const handlePrintHome = useReactToPrint({ content: () => printHomeRef.current, documentTitle: `Planilla_HC_${game?.date}` });
-
-  // Validar Rol estricto buscando en todas partes posibles
-  const currentUserRole = user?.role || data?.user?.role || data?.currentUser?.role || data?.role;
-  const roleStr = String(currentUserRole).toLowerCase();
-  
-  // Mostrar botones a admin, scorer y anotador
+  // ⚠️ TRAMPA TEMPORAL: Forzamos la autorización a TRUE para poder probar
   const isAuthToPrint = true;
 
   useEffect(()=>{const u=F.onDoc("games",id!,setGame);return()=>u&&u();},[id]);
@@ -1018,6 +1008,31 @@ export function WatchGame({ data, id, nav, user }: any) {
   const isTop=game.half==="top";
   const batTm=isTop?aw:hm;
   const isFinal = game.status === "final";
+
+  // ── FUNCIÓN PARA GENERAR Y DESCARGAR EL PDF ──
+  const handleDownloadPDF = async (teamType: "away" | "home") => {
+    setIsGenerating(true);
+    const element = document.getElementById(`print-${teamType}`);
+    if (!element) { setIsGenerating(false); return; }
+    
+    try {
+      // Tomar una foto del div oculto
+      const canvas = await html2canvas(element, { scale: 2, useCORS: true, backgroundColor: "#ffffff" });
+      const imgData = canvas.toDataURL("image/jpeg", 0.98);
+      
+      // Crear PDF formato carta horizontal
+      const pdf = new jsPDF({ orientation: "landscape", unit: "mm", format: "letter" });
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+      
+      pdf.addImage(imgData, "JPEG", 0, 0, pdfWidth, pdfHeight);
+      pdf.save(`Planilla_${teamType.toUpperCase()}_${game?.date || "Juego"}.pdf`);
+    } catch (error) {
+      console.error("Error PDF:", error);
+      alert("Hubo un error al generar el PDF. Revisa tu conexión o intenta desde una PC.");
+    }
+    setIsGenerating(false);
+  };
 
   const getStats = (pid:string) => {
     let vb=0,h=0,hr=0,ci=0,ca=0,bb=0,k=0,db=0,tb=0,sb=0,pa=0,e=0;
@@ -1142,20 +1157,26 @@ export function WatchGame({ data, id, nav, user }: any) {
   return(
     <div style={{...S.sec, maxWidth: 1000, margin: "0 auto", paddingBottom: 40}}>
       
-      {/* ── COMPONENTES DE IMPRESIÓN (OCULTOS HASTA PRESIONAR BOTÓN) ── */}
-      <PrintableScorebook ref={printAwayRef} game={game} data={data} teamType="away" />
-      <PrintableScorebook ref={printHomeRef} game={game} data={data} teamType="home" />
+      {/* ── CONTENEDOR OCULTO PARA GENERAR PDF ── */}
+      <div style={{ position: "absolute", top: -9999, left: -9999, zIndex: -1000 }}>
+        <PrintableScorebook id="print-away" game={game} data={data} teamType="away" />
+        <PrintableScorebook id="print-home" game={game} data={data} teamType="home" />
+      </div>
 
       {/* HEADER DE MARCADOR PRINCIPAL */}
       <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,marginBottom:14, position:"relative"}}>
         <button onClick={()=>nav("home")} style={{position:"absolute", left:0, padding:"6px 12px", borderRadius:8, background:K.input, border:`1px solid ${K.border}`, color:K.text, cursor:"pointer", fontSize:11, fontWeight:700}}>← Volver</button>
         <span style={{...S.badge(game.status==="final"?K.muted:K.live),animation:game.status==="final"?"none":"pulse 2s infinite"}}>{game.status==="final"?"FINALIZADO":"● EN VIVO"}</span>
         
-        {/* BOTONES DE IMPRESIÓN PROTEGIDOS */}
+        {/* BOTONES DE DESCARGA PDF */}
         {game.status === "final" && isAuthToPrint && (
           <div style={{position:"absolute", right:0, display:"flex", gap:6}}>
-            <button onClick={handlePrintAway} style={{padding:"6px 10px", borderRadius:8, background:K.accent, border:"none", color:"#fff", cursor:"pointer", fontSize:11, fontWeight:800}}>🖨️ VIS</button>
-            <button onClick={handlePrintHome} style={{padding:"6px 10px", borderRadius:8, background:K.blue, border:"none", color:"#fff", cursor:"pointer", fontSize:11, fontWeight:800}}>🖨️ HC</button>
+            <button onClick={()=>handleDownloadPDF("away")} disabled={isGenerating} style={{padding:"6px 10px", borderRadius:8, background:K.accent, border:"none", color:"#fff", cursor:isGenerating?"wait":"pointer", fontSize:11, fontWeight:800}}>
+              {isGenerating ? "⏳..." : "📄 PDF VIS"}
+            </button>
+            <button onClick={()=>handleDownloadPDF("home")} disabled={isGenerating} style={{padding:"6px 10px", borderRadius:8, background:K.blue, border:"none", color:"#fff", cursor:isGenerating?"wait":"pointer", fontSize:11, fontWeight:800}}>
+               {isGenerating ? "⏳..." : "📄 PDF HC"}
+            </button>
           </div>
         )}
       </div>
@@ -1474,9 +1495,9 @@ export function WatchGame({ data, id, nav, user }: any) {
   );
 }
 
-// ═══ COMPONENTE DE IMPRESIÓN (PLANILLA TRADICIONAL) ═══
-// Genera el formato impreso cuando el Anotador lo solicita
-const PrintableScorebook = React.forwardRef(({ game, data, teamType }: any, ref: any) => {
+// ═══ COMPONENTE DE IMPRESIÓN (DISEÑO PURO PARA HTML2CANVAS) ═══
+// Este componente se dibuja fuera de pantalla y se fotografía para el PDF
+const PrintableScorebook = ({ id, game, data, teamType }: any) => {
   if (!game) return null;
 
   const aw = data.teams.find((t:any) => t.id === game.awayTeamId);
@@ -1486,7 +1507,6 @@ const PrintableScorebook = React.forwardRef(({ game, data, teamType }: any, ref:
   const opp = isHome ? aw : hm;
   const lineup = isHome ? (game.homeLineup || []) : (game.awayLineup || []);
   
-  // Función para calcular las estadísticas de impresión
   const getPlayerPrintStats = (pid:string) => {
     let vb=0,ca=0,h=0,ci=0,bb=0,k=0;
     (game.plays||[]).forEach((p:any) => {
@@ -1504,105 +1524,76 @@ const PrintableScorebook = React.forwardRef(({ game, data, teamType }: any, ref:
   while (rows.length < 10) rows.push({ id: `empty-${rows.length}`, name: "", number: "", position: "", fieldPos: "" });
 
   return (
-    <div ref={ref} className="print-container">
-      <style>{`
-        /* Ocultar en la pantalla normal de la app */
-        @media screen {
-          .print-container { display: none !important; }
-        }
+    <div id={id} style={{ width: 1122, minHeight: 790, background: "#fff", color: "#000", padding: "30px", fontFamily: "sans-serif", boxSizing: "border-box" }}>
+      
+      {/* HEADER */}
+      <div style={{ display: "flex", justifyContent: "space-between", borderBottom: "2px solid #000", paddingBottom: 8, marginBottom: 16, fontWeight: "bold", fontSize: 14 }}>
+        <div>LIGA: _________________________</div>
+        <div>FECHA: {game.date || "___/___/_____"}</div>
+        <div>CAT: _________________</div>
+        <div>JUEGO: {opp?.name} vs {team?.name}</div>
+      </div>
 
-        /* Estilos exclusivos para cuando se manda a imprimir */
-        @media print {
-          @page { size: landscape; margin: 5mm; }
-          body { -webkit-print-color-adjust: exact; print-color-adjust: exact; background: #fff; color: #000; }
-          .print-container { display: block !important; width: 100%; height: 100%; font-family: sans-serif; }
-          /* Ocultar la barra de navegación y todo lo demás de la app */
-          body > div:not(.print-container), .sidebar, .topbar { display: none !important; } 
-        }
-
-        .sheet { border: 2px solid #000; padding: 4px; margin-bottom: 10px; font-size: 10px; color: #000; background: #fff;}
-        .sheet-header { display: flex; justify-content: space-between; border-bottom: 2px solid #000; padding-bottom: 4px; margin-bottom: 4px; font-weight: bold; font-size: 12px; }
-        .grid-table { width: 100%; border-collapse: collapse; text-align: center; }
-        .grid-table th, .grid-table td { border: 1px solid #444; padding: 2px; }
-        .col-name { width: 220px; text-align: left !important; padding-left: 4px !important; }
-        .col-inn { width: 60px; height: 60px; position: relative; } 
-        .footer-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 4px; border-top: 2px solid #000; padding-top: 4px; }
-      `}</style>
-
-      <div className="sheet">
-        {/* ENCABEZADO */}
-        <div className="sheet-header">
-          <div>LIGA: _________________________</div>
-          <div>FECHA: {game.date || "___/___/_____"}</div>
-          <div>CAT: _________________</div>
-          <div>JUEGO: {opp?.name} vs {team?.name}</div>
-        </div>
-
-        {/* TABLA PRINCIPAL (BATEADORES E INNINGS) */}
-        <table className="grid-table">
-          <thead>
-            <tr style={{backgroundColor: "#eee"}}>
-              <th style={{width: 20}}>N°</th>
-              <th className="col-name">AL BATE: {team?.name} ({isHome ? "HC" : "VIS"})</th>
-              <th style={{width: 30}}>POS</th>
-              {[1,2,3,4,5,6,7,8,9].map(i => <th key={i} className="col-inn">{i}</th>)}
-              <th style={{width: 25}}>VB</th><th style={{width: 25}}>C</th><th style={{width: 25}}>H</th><th style={{width: 25}}>CI</th><th style={{width: 25}}>BB</th><th style={{width: 25}}>K</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((p: any, idx: number) => {
-              const pst = p.id.startsWith("empty") ? {vb:"",ca:"",h:"",ci:"",bb:"",k:""} : getPlayerPrintStats(p.id);
-              return (
+      {/* TABLA BATEADORES */}
+      <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "center", fontSize: 12 }}>
+        <thead>
+          <tr style={{ backgroundColor: "#eee" }}>
+            <th style={{ border: "1px solid #444", padding: 4, width: 30 }}>N°</th>
+            <th style={{ border: "1px solid #444", padding: 4, width: 250, textAlign: "left" }}>AL BATE: {team?.name} ({isHome ? "HC" : "VIS"})</th>
+            <th style={{ border: "1px solid #444", padding: 4, width: 40 }}>POS</th>
+            {[1,2,3,4,5,6,7,8,9].map(i => <th key={i} style={{ border: "1px solid #444", width: 65, height: 40 }}>{i}</th>)}
+            <th style={{ border: "1px solid #444", width: 35 }}>VB</th><th style={{ border: "1px solid #444", width: 35 }}>C</th><th style={{ border: "1px solid #444", width: 35 }}>H</th><th style={{ border: "1px solid #444", width: 35 }}>CI</th><th style={{ border: "1px solid #444", width: 35 }}>BB</th><th style={{ border: "1px solid #444", width: 35 }}>K</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((p: any, idx: number) => {
+            const pst = p.id.startsWith("empty") ? {vb:"",ca:"",h:"",ci:"",bb:"",k:""} : getPlayerPrintStats(p.id);
+            return (
               <tr key={p.id}>
-                <td style={{fontWeight: 'bold'}}>{idx < lineup.length ? idx + 1 : ""}</td>
-                <td className="col-name">{p.name ? `${p.number} - ${p.name}` : ""}</td>
-                <td>{p.fieldPos?.match(/\((\d)\)/)?.[1] || p.position || ""}</td>
-                
-                {/* 9 Cuadritos de Inning vacíos listos para los diamantes en el futuro */}
-                {[1,2,3,4,5,6,7,8,9].map(i => <td key={i} className="col-inn"></td>)}
-                
-                {/* Cuadritos de Estadísticas Vaciadas */}
-                <td style={{fontWeight:"bold"}}>{pst.vb}</td>
-                <td>{pst.ca}</td>
-                <td style={{fontWeight:"bold"}}>{pst.h}</td>
-                <td>{pst.ci}</td>
-                <td>{pst.bb}</td>
-                <td>{pst.k}</td>
+                <td style={{ border: "1px solid #444", fontWeight: "bold", padding: 4 }}>{idx < lineup.length ? idx + 1 : ""}</td>
+                <td style={{ border: "1px solid #444", textAlign: "left", padding: "4px 8px", fontWeight: "bold" }}>{p.name ? `${p.number} - ${p.name}` : ""}</td>
+                <td style={{ border: "1px solid #444" }}>{p.fieldPos?.match(/\((\d)\)/)?.[1] || p.position || ""}</td>
+                {[1,2,3,4,5,6,7,8,9].map(i => <td key={i} style={{ border: "1px solid #444", height: 60, position: "relative" }}></td>)}
+                <td style={{ border: "1px solid #444", fontWeight: "bold" }}>{pst.vb}</td>
+                <td style={{ border: "1px solid #444" }}>{pst.ca}</td>
+                <td style={{ border: "1px solid #444", fontWeight: "bold" }}>{pst.h}</td>
+                <td style={{ border: "1px solid #444" }}>{pst.ci}</td>
+                <td style={{ border: "1px solid #444" }}>{pst.bb}</td>
+                <td style={{ border: "1px solid #444" }}>{pst.k}</td>
               </tr>
-            )})}
-          </tbody>
-        </table>
+            )
+          })}
+        </tbody>
+      </table>
 
-        {/* PIE DE PÁGINA (PITCHEO DE LOS OPONENTES Y FIRMAS) */}
-        <div className="footer-grid">
-          <table className="grid-table">
+      {/* PIE DE PÁGINA (PITCHEO DE LOS OPONENTES Y FIRMAS) */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20, marginTop: 16, borderTop: "2px solid #000", paddingTop: 16 }}>
+         <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "center", fontSize: 12 }}>
             <thead>
-              <tr style={{backgroundColor: "#eee"}}>
-                <th style={{textAlign: 'left', paddingLeft: 4}}>LANZADORES DE {opp?.name}</th>
-                <th style={{width: 30}}>IP</th><th style={{width: 30}}>H</th><th style={{width: 30}}>C</th><th style={{width: 30}}>CL</th><th style={{width: 30}}>BB</th><th style={{width: 30}}>K</th>
+              <tr style={{ backgroundColor: "#eee" }}>
+                <th style={{ border: "1px solid #444", padding: 4, textAlign: "left" }}>LANZADORES DE {opp?.name}</th>
+                <th style={{ border: "1px solid #444", width: 40 }}>IP</th><th style={{ border: "1px solid #444", width: 40 }}>H</th><th style={{ border: "1px solid #444", width: 40 }}>C</th><th style={{ border: "1px solid #444", width: 40 }}>CL</th><th style={{ border: "1px solid #444", width: 40 }}>BB</th><th style={{ border: "1px solid #444", width: 40 }}>K</th>
               </tr>
             </thead>
             <tbody>
-              {/* Aquí luego mapearemos a los pitchers que jugaron, por ahora espacios en blanco para firmar */}
               {[1,2,3,4].map(i => (
-                <tr key={i} style={{height: 20}}>
-                  <td></td><td></td><td></td><td></td><td></td><td></td><td></td>
+                <tr key={i}>
+                  <td style={{ border: "1px solid #444", height: 26 }}></td><td style={{ border: "1px solid #444" }}></td><td style={{ border: "1px solid #444" }}></td><td style={{ border: "1px solid #444" }}></td><td style={{ border: "1px solid #444" }}></td><td style={{ border: "1px solid #444" }}></td><td style={{ border: "1px solid #444" }}></td>
                 </tr>
               ))}
             </tbody>
-          </table>
-          <div style={{display: 'flex', flexDirection: 'column', justifyContent: 'space-between'}}>
-             <div style={{display: 'flex', gap: 10}}>
-               <div style={{flex: 1, border: '1px solid #444', height: 40, padding: 4}}>Anotador: {game.umpires?.scorer}</div>
-               <div style={{flex: 1, border: '1px solid #444', height: 40, padding: 4}}>Principal: {game.umpires?.hp}</div>
-             </div>
-             <div style={{display: 'flex', gap: 10, marginTop: 4}}>
-               <div style={{flex: 1, border: '1px solid #444', height: 40, padding: 4}}>Manager HC: {game.homeStaff?.manager}</div>
-               <div style={{flex: 1, border: '1px solid #444', height: 40, padding: 4}}>Manager VIS: {game.awayStaff?.manager}</div>
-             </div>
-          </div>
-        </div>
+         </table>
+         <div style={{ display: "flex", flexDirection: "column", justifyContent: "space-between", gap: 10 }}>
+            <div style={{ display: "flex", gap: 10 }}>
+              <div style={{ flex: 1, border: "1px solid #444", padding: 8, fontSize: 12 }}><b>Anotador:</b> {game.umpires?.scorer}</div>
+              <div style={{ flex: 1, border: "1px solid #444", padding: 8, fontSize: 12 }}><b>Principal:</b> {game.umpires?.hp}</div>
+            </div>
+            <div style={{ display: "flex", gap: 10 }}>
+              <div style={{ flex: 1, border: "1px solid #444", padding: 8, fontSize: 12 }}><b>Manager HC:</b> {game.homeStaff?.manager}</div>
+              <div style={{ flex: 1, border: "1px solid #444", padding: 8, fontSize: 12 }}><b>Manager VIS:</b> {game.awayStaff?.manager}</div>
+            </div>
+         </div>
       </div>
     </div>
   );
-});
+}
